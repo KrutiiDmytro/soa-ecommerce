@@ -2,6 +2,7 @@
 /**/var/
 /**/.env.local
 /**/composer.lock
+/**/.phpunit.cache/
 .idea/
 .vscode/
 *.log

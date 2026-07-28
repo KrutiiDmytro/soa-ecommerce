@@ -54,7 +54,7 @@ services:
   customer-management:
     <<: *php-service
     environment: { SERVICE_NAME: customer-management }
-    volumes: ["./services/customer-management:/app"]
+    volumes: ["./services/customer-management:/app", "./contracts:/contracts:ro"]
     depends_on: [db-customer]
 
   product-inventory:

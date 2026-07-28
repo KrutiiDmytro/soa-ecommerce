@@ -41,14 +41,14 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
 - [x] README-заготовка + `docs/todo.md` (цей файл).
 - **Verify ✅:** усі 12 контейнерів up; `/health` кожного з 6 сервісів → `200 {"status":"ok"}`; ESB доступний з хоста на `:8080`, сервіси — лише внутрішньо.
 
-## Фаза 1 — Customer Management (централізований IAM)
-- [ ] DDD-домен: агрегати `Customer`, `Address`, `Credential`; VO `Email`, спільний `Money`.
-- [ ] Своя схема БД (`customer`), Doctrine-міграція.
-- [ ] SOAP-endpoint за WSDL: `RegisterCustomer`, `Authenticate`, `GetCustomer`, `UpdateAddress`.
-- [ ] **IAM:** видача токена ідентичності (JWT/WS-Security UsernameToken) при `Authenticate`; ключі підпису — централізовано.
-- [ ] Мапінг канонічний `Customer` ↔ внутрішня доменна модель.
-- [ ] Unit-тести домену.
-- **Verify:** SOAP `RegisterCustomer` → `Authenticate` повертає валідний токен; збережено в БД.
+## Фаза 1 — Customer Management (централізований IAM) ✅
+- [x] DDD-домен: агрегат `Customer`; VO `Email`, `Address`, `Credential`; доменні винятки; порт `CustomerRepository`.
+- [x] Своя схема БД (`customer`), Doctrine-міграція (`Version20260728000001`), `schema:validate` зелений.
+- [x] SOAP-endpoint за розширеним WSDL: `RegisterCustomer`, `Authenticate`, `GetCustomer`, `UpdateAddress` (native `SoapServer`, document/literal).
+- [x] **IAM:** `TokenIssuer` видає підписаний JWT (HS256, self-contained) при `Authenticate`; секрет `IAM_TOKEN_SECRET` спільний для перевірки в ESB.
+- [x] Мапінг канонічний `Customer`/`Address` ↔ доменна модель (`toCanonical()`).
+- [x] Unit-тести домену + IAM (7/7 зелені).
+- **Verify ✅:** реальний `SoapClient` e2e: Register → Authenticate (валідний токен) → GetCustomer → UpdateAddress; невірний пароль → SOAP Fault. Дані збережено в БД.
 
 ## Фаза 2 — Product & Inventory
 - [ ] DDD-домен: `Product`, `Category`, `StockItem` (резервування як доменна операція).
@@ -139,6 +139,17 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
   - **dev-режим прогріває кеш ~40 с на першому запиті** (mounted volume). Не блокує, але для
     e2e/CI варто прогрівати кеш або перейти на `APP_ENV=prod` у контейнерах.
   - RabbitMQ management-порт 15672 зайнятий іншим стеком → перемапив на 15673.
+- **Фаза 1 ✅** (2026-07-28). Customer Management + централізований IAM.
+  Стек сервісу: Symfony 7.4 (MicroKernel) + Doctrine ORM 3 + native SOAP. Знахідки:
+  - `firebase/php-jwt` заблоковано security-advisory (усі 6.x) → замінив на self-contained
+    JWT HS256 у `TokenIssuer` (менше залежностей, повний контроль).
+  - Контролер із конструктор-залежністю має бути **public + tag `controller.service_arguments`**
+    (інакше «cannot be fetched … private»); health працював без цього лише бо без конструктора.
+  - Relative-import у WSDL (`schemaLocation="canonical-data-model.xsd"`) не резолвиться при
+    завантаженні WSDL по HTTP → SOAP-клієнт бере контракт **локально** (ESB монтує `/contracts`),
+    endpoint — з `soap:address`. Це і є реальний SOA-патерн (клієнт/ESB тримає контракт).
+  - Doctrine авто-імена індексів → зафіксував `UniqueConstraint(name:...)`, щоб `schema:validate`
+    збігався з рукописною міграцією.
 
 ## Review
 _(заповнюється по завершенню)_
