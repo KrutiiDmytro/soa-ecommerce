@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Приклад грубозернистого SOAP-контракту SOA: Order Management Service.
+  Один сервіс покриває цілу бізнес-функцію «покупка»: кошик + checkout + замовлення
+  (у мікросервісах це були б окремі Cart і Order сервіси — див. docs/02).
+  Типи беруться з канонічної моделі даних (canonical-data-model.xsd).
+  WSDL 1.1, document/literal, SOAP 1.1.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:cdm="urn:printzone:soa:canonical:v1"
+                  xmlns:tns="urn:printzone:soa:order-management:v1"
+                  targetNamespace="urn:printzone:soa:order-management:v1">
+
+  <!-- ============ Типи (повідомлення) ============ -->
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:printzone:soa:order-management:v1"
+                elementFormDefault="qualified">
+      <xsd:import namespace="urn:printzone:soa:canonical:v1"
+                  schemaLocation="canonical-data-model.xsd"/>
+
+      <!-- CreateCart -->
+      <xsd:element name="CreateCartRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="customerId" type="cdm:UUID"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CreateCartResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="cartId" type="cdm:UUID"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- AddCartItem -->
+      <xsd:element name="AddCartItemRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="cartId" type="cdm:UUID"/>
+            <xsd:element name="productId" type="cdm:UUID"/>
+            <xsd:element name="quantity" type="xsd:int"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AddCartItemResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="cartId" type="cdm:UUID"/>
+            <xsd:element name="lineCount" type="xsd:int"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Checkout: кошик -> замовлення -->
+      <xsd:element name="CheckoutRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="cartId" type="cdm:UUID"/>
+            <xsd:element name="customerId" type="cdm:UUID"/>
+            <xsd:element name="shippingAddress" type="cdm:Address"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CheckoutResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="order" type="cdm:Order"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- GetOrder -->
+      <xsd:element name="GetOrderRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderId" type="cdm:UUID"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetOrderResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="order" type="cdm:Order"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- Fault -->
+      <xsd:element name="OrderFault">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="code" type="xsd:string"/>
+            <xsd:element name="message" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <!-- ============ Повідомлення ============ -->
+  <wsdl:message name="CreateCartIn">  <wsdl:part name="body" element="tns:CreateCartRequest"/>  </wsdl:message>
+  <wsdl:message name="CreateCartOut"> <wsdl:part name="body" element="tns:CreateCartResponse"/> </wsdl:message>
+  <wsdl:message name="AddCartItemIn"> <wsdl:part name="body" element="tns:AddCartItemRequest"/> </wsdl:message>
+  <wsdl:message name="AddCartItemOut"><wsdl:part name="body" element="tns:AddCartItemResponse"/></wsdl:message>
+  <wsdl:message name="CheckoutIn">    <wsdl:part name="body" element="tns:CheckoutRequest"/>    </wsdl:message>
+  <wsdl:message name="CheckoutOut">   <wsdl:part name="body" element="tns:CheckoutResponse"/>   </wsdl:message>
+  <wsdl:message name="GetOrderIn">    <wsdl:part name="body" element="tns:GetOrderRequest"/>    </wsdl:message>
+  <wsdl:message name="GetOrderOut">   <wsdl:part name="body" element="tns:GetOrderResponse"/>   </wsdl:message>
+  <wsdl:message name="OrderFaultMsg"> <wsdl:part name="body" element="tns:OrderFault"/>         </wsdl:message>
+
+  <!-- ============ Port type (абстрактний інтерфейс) ============ -->
+  <wsdl:portType name="OrderManagementPort">
+    <wsdl:operation name="CreateCart">
+      <wsdl:input  message="tns:CreateCartIn"/>
+      <wsdl:output message="tns:CreateCartOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="AddCartItem">
+      <wsdl:input  message="tns:AddCartItemIn"/>
+      <wsdl:output message="tns:AddCartItemOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="Checkout">
+      <wsdl:input  message="tns:CheckoutIn"/>
+      <wsdl:output message="tns:CheckoutOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="GetOrder">
+      <wsdl:input  message="tns:GetOrderIn"/>
+      <wsdl:output message="tns:GetOrderOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <!-- ============ Binding (SOAP 1.1, document/literal) ============ -->
+  <wsdl:binding name="OrderManagementSoapBinding" type="tns:OrderManagementPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="CreateCart">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/CreateCart"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="AddCartItem">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/AddCartItem"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="Checkout">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/Checkout"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="GetOrder">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/GetOrder"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <!-- ============ Service (точка доступу через ESB) ============ -->
+  <wsdl:service name="OrderManagementService">
+    <wsdl:port name="OrderManagementPort" binding="tns:OrderManagementSoapBinding">
+      <soap:address location="https://esb.printzone.internal/services/order-management/v1"/>
+    </wsdl:port>
+  </wsdl:service>
+
+</wsdl:definitions>

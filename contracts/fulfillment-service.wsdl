@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Короткий SOAP-контракт SOA: Fulfillment Service (оплата + доставка).
+  Скорочений: 2 репрезентативні операції. Типи — з канонічної моделі.
+  WSDL 1.1, document/literal, SOAP 1.1.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:cdm="urn:printzone:soa:canonical:v1"
+                  xmlns:tns="urn:printzone:soa:fulfillment:v1"
+                  targetNamespace="urn:printzone:soa:fulfillment:v1">
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:printzone:soa:fulfillment:v1" elementFormDefault="qualified">
+      <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
+
+      <xsd:element name="AuthorizePaymentRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="orderId" type="cdm:UUID"/>
+          <xsd:element name="amount" type="cdm:Money"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AuthorizePaymentResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="paymentId" type="cdm:UUID"/>
+          <xsd:element name="authorized" type="xsd:boolean"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="CreateShipmentRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="orderId" type="cdm:UUID"/>
+          <xsd:element name="shippingAddress" type="cdm:Address"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CreateShipmentResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="shipmentId" type="cdm:UUID"/>
+          <xsd:element name="trackingNumber" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="FulfillmentFault">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="code" type="xsd:string"/>
+          <xsd:element name="message" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="AuthorizePaymentIn"> <wsdl:part name="body" element="tns:AuthorizePaymentRequest"/> </wsdl:message>
+  <wsdl:message name="AuthorizePaymentOut"><wsdl:part name="body" element="tns:AuthorizePaymentResponse"/></wsdl:message>
+  <wsdl:message name="CreateShipmentIn">   <wsdl:part name="body" element="tns:CreateShipmentRequest"/>   </wsdl:message>
+  <wsdl:message name="CreateShipmentOut">  <wsdl:part name="body" element="tns:CreateShipmentResponse"/>  </wsdl:message>
+  <wsdl:message name="FulfillmentFaultMsg"><wsdl:part name="body" element="tns:FulfillmentFault"/>          </wsdl:message>
+
+  <wsdl:portType name="FulfillmentPort">
+    <wsdl:operation name="AuthorizePayment">
+      <wsdl:input message="tns:AuthorizePaymentIn"/>
+      <wsdl:output message="tns:AuthorizePaymentOut"/>
+      <wsdl:fault name="FulfillmentFault" message="tns:FulfillmentFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="CreateShipment">
+      <wsdl:input message="tns:CreateShipmentIn"/>
+      <wsdl:output message="tns:CreateShipmentOut"/>
+      <wsdl:fault name="FulfillmentFault" message="tns:FulfillmentFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="FulfillmentSoapBinding" type="tns:FulfillmentPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="AuthorizePayment">
+      <soap:operation soapAction="urn:printzone:soa:fulfillment:v1/AuthorizePayment"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="FulfillmentFault"><soap:fault name="FulfillmentFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="CreateShipment">
+      <soap:operation soapAction="urn:printzone:soa:fulfillment:v1/CreateShipment"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="FulfillmentFault"><soap:fault name="FulfillmentFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="FulfillmentService">
+    <wsdl:port name="FulfillmentPort" binding="tns:FulfillmentSoapBinding">
+      <soap:address location="https://esb.printzone.internal/services/fulfillment/v1"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

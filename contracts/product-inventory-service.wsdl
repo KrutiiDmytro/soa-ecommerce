@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Короткий SOAP-контракт SOA: Product & Inventory Service (каталог + наявність).
+  Скорочений: 2 репрезентативні операції. Типи — з канонічної моделі.
+  WSDL 1.1, document/literal, SOAP 1.1.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:cdm="urn:printzone:soa:canonical:v1"
+                  xmlns:tns="urn:printzone:soa:product-inventory:v1"
+                  targetNamespace="urn:printzone:soa:product-inventory:v1">
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:printzone:soa:product-inventory:v1" elementFormDefault="qualified">
+      <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
+
+      <xsd:element name="GetProductRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetProductResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="product" type="cdm:Product"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="CheckStockRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+          <xsd:element name="quantity" type="xsd:int"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CheckStockResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="available" type="xsd:boolean"/>
+          <xsd:element name="stockAvailable" type="xsd:int"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="ProductFault">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="code" type="xsd:string"/>
+          <xsd:element name="message" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="GetProductIn"> <wsdl:part name="body" element="tns:GetProductRequest"/> </wsdl:message>
+  <wsdl:message name="GetProductOut"><wsdl:part name="body" element="tns:GetProductResponse"/></wsdl:message>
+  <wsdl:message name="CheckStockIn"> <wsdl:part name="body" element="tns:CheckStockRequest"/> </wsdl:message>
+  <wsdl:message name="CheckStockOut"><wsdl:part name="body" element="tns:CheckStockResponse"/></wsdl:message>
+  <wsdl:message name="ProductFaultMsg"><wsdl:part name="body" element="tns:ProductFault"/>     </wsdl:message>
+
+  <wsdl:portType name="ProductInventoryPort">
+    <wsdl:operation name="GetProduct">
+      <wsdl:input message="tns:GetProductIn"/>
+      <wsdl:output message="tns:GetProductOut"/>
+      <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="CheckStock">
+      <wsdl:input message="tns:CheckStockIn"/>
+      <wsdl:output message="tns:CheckStockOut"/>
+      <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="ProductInventorySoapBinding" type="tns:ProductInventoryPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="GetProduct">
+      <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/GetProduct"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="CheckStock">
+      <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/CheckStock"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="ProductInventoryService">
+    <wsdl:port name="ProductInventoryPort" binding="tns:ProductInventorySoapBinding">
+      <soap:address location="https://esb.printzone.internal/services/product-inventory/v1"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

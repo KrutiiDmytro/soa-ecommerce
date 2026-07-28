@@ -1,0 +1,101 @@
+# SOA-стек Task 28. Назовні виставлено ЛИШЕ ESB (клієнт не звертається до сервісів напряму).
+name: printzone-soa
+
+x-php-service: &php-service
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: printzone-soa-php:8.2
+  restart: unless-stopped
+  env_file: .env
+
+services:
+  # ---------- Інфраструктура ----------
+  db-customer:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: customer
+    volumes: [pg-customer:/var/lib/postgresql/data]
+
+  db-product:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: product
+    volumes: [pg-product:/var/lib/postgresql/data]
+
+  db-order:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: orders
+    volumes: [pg-order:/var/lib/postgresql/data]
+
+  db-fulfillment:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: fulfillment
+    volumes: [pg-fulfillment:/var/lib/postgresql/data]
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports: ["15673:15672"]   # management UI (діагностика; 15673, щоб не конфліктувати з іншими стеками)
+
+  redis:
+    image: redis:7
+
+  # ---------- SOA-сервіси (внутрішні, без публічних портів) ----------
+  customer-management:
+    <<: *php-service
+    environment: { SERVICE_NAME: customer-management }
+    volumes: ["./services/customer-management:/app"]
+    depends_on: [db-customer]
+
+  product-inventory:
+    <<: *php-service
+    environment: { SERVICE_NAME: product-inventory }
+    volumes: ["./services/product-inventory:/app"]
+    depends_on: [db-product, redis]
+
+  order-management:
+    <<: *php-service
+    environment: { SERVICE_NAME: order-management }
+    volumes: ["./services/order-management:/app"]
+    depends_on: [db-order]
+
+  fulfillment:
+    <<: *php-service
+    environment: { SERVICE_NAME: fulfillment }
+    volumes: ["./services/fulfillment:/app"]
+    depends_on: [db-fulfillment, rabbitmq]
+
+  notification:
+    <<: *php-service
+    environment: { SERVICE_NAME: notification }
+    volumes: ["./services/notification:/app"]
+    depends_on: [rabbitmq]
+
+  # ---------- ESB (єдина публічна точка входу) ----------
+  esb:
+    <<: *php-service
+    environment: { SERVICE_NAME: esb }
+    volumes: ["./esb:/app"]
+    ports: ["8080:80"]
+    depends_on:
+      - customer-management
+      - product-inventory
+      - order-management
+      - fulfillment
+      - notification
+
+volumes:
+  pg-customer:
+  pg-product:
+  pg-order:
+  pg-fulfillment:

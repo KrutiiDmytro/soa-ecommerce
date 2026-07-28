@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Короткий SOAP-контракт SOA: Customer Management Service (ідентичність + профіль).
+  Скорочений: показано 2 репрезентативні операції. Типи — з канонічної моделі.
+  WSDL 1.1, document/literal, SOAP 1.1.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:cdm="urn:printzone:soa:canonical:v1"
+                  xmlns:tns="urn:printzone:soa:customer-management:v1"
+                  targetNamespace="urn:printzone:soa:customer-management:v1">
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:printzone:soa:customer-management:v1" elementFormDefault="qualified">
+      <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
+
+      <xsd:element name="AuthenticateRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="email" type="xsd:string"/>
+          <xsd:element name="password" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AuthenticateResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="customerId" type="cdm:UUID"/>
+          <xsd:element name="token" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="GetCustomerRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="customerId" type="cdm:UUID"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetCustomerResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="customer" type="cdm:Customer"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="CustomerFault">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="code" type="xsd:string"/>
+          <xsd:element name="message" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="AuthenticateIn">  <wsdl:part name="body" element="tns:AuthenticateRequest"/>  </wsdl:message>
+  <wsdl:message name="AuthenticateOut"> <wsdl:part name="body" element="tns:AuthenticateResponse"/> </wsdl:message>
+  <wsdl:message name="GetCustomerIn">   <wsdl:part name="body" element="tns:GetCustomerRequest"/>   </wsdl:message>
+  <wsdl:message name="GetCustomerOut">  <wsdl:part name="body" element="tns:GetCustomerResponse"/>  </wsdl:message>
+  <wsdl:message name="CustomerFaultMsg"><wsdl:part name="body" element="tns:CustomerFault"/>         </wsdl:message>
+
+  <wsdl:portType name="CustomerManagementPort">
+    <wsdl:operation name="Authenticate">
+      <wsdl:input message="tns:AuthenticateIn"/>
+      <wsdl:output message="tns:AuthenticateOut"/>
+      <wsdl:fault name="CustomerFault" message="tns:CustomerFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="GetCustomer">
+      <wsdl:input message="tns:GetCustomerIn"/>
+      <wsdl:output message="tns:GetCustomerOut"/>
+      <wsdl:fault name="CustomerFault" message="tns:CustomerFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="CustomerManagementSoapBinding" type="tns:CustomerManagementPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Authenticate">
+      <soap:operation soapAction="urn:printzone:soa:customer-management:v1/Authenticate"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="CustomerFault"><soap:fault name="CustomerFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="GetCustomer">
+      <soap:operation soapAction="urn:printzone:soa:customer-management:v1/GetCustomer"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="CustomerFault"><soap:fault name="CustomerFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="CustomerManagementService">
+    <wsdl:port name="CustomerManagementPort" binding="tns:CustomerManagementSoapBinding">
+      <soap:address location="https://esb.printzone.internal/services/customer-management/v1"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

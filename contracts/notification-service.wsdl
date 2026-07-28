@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Короткий SOAP-контракт SOA: Notification Service (наскрізна утиліта сповіщень).
+  Скорочений: 1 репрезентативна операція (stateless сервіс).
+  WSDL 1.1, document/literal, SOAP 1.1.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:cdm="urn:printzone:soa:canonical:v1"
+                  xmlns:tns="urn:printzone:soa:notification:v1"
+                  targetNamespace="urn:printzone:soa:notification:v1">
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:printzone:soa:notification:v1" elementFormDefault="qualified">
+      <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
+
+      <xsd:simpleType name="Channel">
+        <xsd:restriction base="xsd:string">
+          <xsd:enumeration value="EMAIL"/>
+          <xsd:enumeration value="SMS"/>
+        </xsd:restriction>
+      </xsd:simpleType>
+
+      <xsd:element name="SendNotificationRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="customerId" type="cdm:UUID"/>
+          <xsd:element name="channel" type="tns:Channel"/>
+          <xsd:element name="template" type="xsd:string"/>
+          <xsd:element name="subject" type="xsd:string" minOccurs="0"/>
+          <xsd:element name="body" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="SendNotificationResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="accepted" type="xsd:boolean"/>
+          <xsd:element name="notificationId" type="cdm:UUID"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="NotificationFault">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="code" type="xsd:string"/>
+          <xsd:element name="message" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="SendNotificationIn"> <wsdl:part name="body" element="tns:SendNotificationRequest"/> </wsdl:message>
+  <wsdl:message name="SendNotificationOut"><wsdl:part name="body" element="tns:SendNotificationResponse"/></wsdl:message>
+  <wsdl:message name="NotificationFaultMsg"><wsdl:part name="body" element="tns:NotificationFault"/>        </wsdl:message>
+
+  <wsdl:portType name="NotificationPort">
+    <wsdl:operation name="SendNotification">
+      <wsdl:input message="tns:SendNotificationIn"/>
+      <wsdl:output message="tns:SendNotificationOut"/>
+      <wsdl:fault name="NotificationFault" message="tns:NotificationFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="NotificationSoapBinding" type="tns:NotificationPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="SendNotification">
+      <soap:operation soapAction="urn:printzone:soa:notification:v1/SendNotification"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="NotificationFault"><soap:fault name="NotificationFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="NotificationService">
+    <wsdl:port name="NotificationPort" binding="tns:NotificationSoapBinding">
+      <soap:address location="https://esb.printzone.internal/services/notification/v1"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>
