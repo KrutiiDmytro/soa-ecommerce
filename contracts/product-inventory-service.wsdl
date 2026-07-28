@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Короткий SOAP-контракт SOA: Product & Inventory Service (каталог + наявність).
-  Скорочений: 2 репрезентативні операції. Типи — з канонічної моделі.
+  SOAP-контракт SOA: Product & Inventory Service (каталог + наявність/резервування).
+  Task 28: розширено до повного набору з 4 операцій (SearchProducts, GetProduct,
+  CheckStock, ReserveStock) відповідно до дизайну Task 27 §03. Типи — з канонічної моделі.
   WSDL 1.1, document/literal, SOAP 1.1.
 -->
 <wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
@@ -15,6 +16,19 @@
     <xsd:schema targetNamespace="urn:printzone:soa:product-inventory:v1" elementFormDefault="qualified">
       <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
 
+      <!-- SearchProducts -->
+      <xsd:element name="SearchProductsRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="query" type="xsd:string" minOccurs="0"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="SearchProductsResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="product" type="cdm:Product" minOccurs="0" maxOccurs="unbounded"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <!-- GetProduct -->
       <xsd:element name="GetProductRequest">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="productId" type="cdm:UUID"/>
@@ -26,6 +40,7 @@
         </xsd:sequence></xsd:complexType>
       </xsd:element>
 
+      <!-- CheckStock -->
       <xsd:element name="CheckStockRequest">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="productId" type="cdm:UUID"/>
@@ -39,6 +54,21 @@
         </xsd:sequence></xsd:complexType>
       </xsd:element>
 
+      <!-- ReserveStock -->
+      <xsd:element name="ReserveStockRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+          <xsd:element name="quantity" type="xsd:int"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="ReserveStockResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+          <xsd:element name="reserved" type="xsd:boolean"/>
+          <xsd:element name="stockAvailable" type="xsd:int"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
       <xsd:element name="ProductFault">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="code" type="xsd:string"/>
@@ -48,13 +78,22 @@
     </xsd:schema>
   </wsdl:types>
 
-  <wsdl:message name="GetProductIn"> <wsdl:part name="body" element="tns:GetProductRequest"/> </wsdl:message>
-  <wsdl:message name="GetProductOut"><wsdl:part name="body" element="tns:GetProductResponse"/></wsdl:message>
-  <wsdl:message name="CheckStockIn"> <wsdl:part name="body" element="tns:CheckStockRequest"/> </wsdl:message>
-  <wsdl:message name="CheckStockOut"><wsdl:part name="body" element="tns:CheckStockResponse"/></wsdl:message>
-  <wsdl:message name="ProductFaultMsg"><wsdl:part name="body" element="tns:ProductFault"/>     </wsdl:message>
+  <wsdl:message name="SearchProductsIn"> <wsdl:part name="body" element="tns:SearchProductsRequest"/> </wsdl:message>
+  <wsdl:message name="SearchProductsOut"><wsdl:part name="body" element="tns:SearchProductsResponse"/></wsdl:message>
+  <wsdl:message name="GetProductIn">     <wsdl:part name="body" element="tns:GetProductRequest"/>     </wsdl:message>
+  <wsdl:message name="GetProductOut">    <wsdl:part name="body" element="tns:GetProductResponse"/>    </wsdl:message>
+  <wsdl:message name="CheckStockIn">     <wsdl:part name="body" element="tns:CheckStockRequest"/>     </wsdl:message>
+  <wsdl:message name="CheckStockOut">    <wsdl:part name="body" element="tns:CheckStockResponse"/>    </wsdl:message>
+  <wsdl:message name="ReserveStockIn">   <wsdl:part name="body" element="tns:ReserveStockRequest"/>   </wsdl:message>
+  <wsdl:message name="ReserveStockOut">  <wsdl:part name="body" element="tns:ReserveStockResponse"/>  </wsdl:message>
+  <wsdl:message name="ProductFaultMsg">  <wsdl:part name="body" element="tns:ProductFault"/>          </wsdl:message>
 
   <wsdl:portType name="ProductInventoryPort">
+    <wsdl:operation name="SearchProducts">
+      <wsdl:input message="tns:SearchProductsIn"/>
+      <wsdl:output message="tns:SearchProductsOut"/>
+      <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
+    </wsdl:operation>
     <wsdl:operation name="GetProduct">
       <wsdl:input message="tns:GetProductIn"/>
       <wsdl:output message="tns:GetProductOut"/>
@@ -65,10 +104,21 @@
       <wsdl:output message="tns:CheckStockOut"/>
       <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
     </wsdl:operation>
+    <wsdl:operation name="ReserveStock">
+      <wsdl:input message="tns:ReserveStockIn"/>
+      <wsdl:output message="tns:ReserveStockOut"/>
+      <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
+    </wsdl:operation>
   </wsdl:portType>
 
   <wsdl:binding name="ProductInventorySoapBinding" type="tns:ProductInventoryPort">
     <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="SearchProducts">
+      <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/SearchProducts"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
     <wsdl:operation name="GetProduct">
       <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/GetProduct"/>
       <wsdl:input><soap:body use="literal"/></wsdl:input>
@@ -81,11 +131,17 @@
       <wsdl:output><soap:body use="literal"/></wsdl:output>
       <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
     </wsdl:operation>
+    <wsdl:operation name="ReserveStock">
+      <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/ReserveStock"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
   </wsdl:binding>
 
   <wsdl:service name="ProductInventoryService">
     <wsdl:port name="ProductInventoryPort" binding="tns:ProductInventorySoapBinding">
-      <soap:address location="https://esb.printzone.internal/services/product-inventory/v1"/>
+      <soap:address location="http://product-inventory/soap"/>
     </wsdl:port>
   </wsdl:service>
 </wsdl:definitions>

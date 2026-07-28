@@ -50,13 +50,14 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
 - [x] Unit-тести домену + IAM (7/7 зелені).
 - **Verify ✅:** реальний `SoapClient` e2e: Register → Authenticate (валідний токен) → GetCustomer → UpdateAddress; невірний пароль → SOAP Fault. Дані збережено в БД.
 
-## Фаза 2 — Product & Inventory
-- [ ] DDD-домен: `Product`, `Category`, `StockItem` (резервування як доменна операція).
-- [ ] Своя схема БД (`catalog`), міграція + фікстури-сідери (каталог для e2e).
-- [ ] SOAP-endpoint: `SearchProducts`, `GetProduct`, `CheckStock`, `ReserveStock`.
-- [ ] **Redis-кеш** для читання каталогу (`SearchProducts`/`GetProduct`).
-- [ ] Unit-тести (резервування, брак залишку → fault).
-- **Verify:** `ReserveStock` зменшує доступний залишок атомарно; понад залишок → SOAP Fault.
+## Фаза 2 — Product & Inventory ✅
+- [x] DDD-домен: агрегат `Product` + VO `Money` (резервування як доменна операція з інваріантом).
+- [x] Своя схема БД (`catalog`), міграція (`Version20260728000002`), `schema:validate` зелений.
+- [x] Seed-команда `app:seed-products` з ФІКСОВАНИМИ UUID (3 товари) — для Order-фази та e2e.
+- [x] SOAP-endpoint за розширеним WSDL: `SearchProducts`, `GetProduct`, `CheckStock`, `ReserveStock`.
+- [x] **Redis-кеш** читань (`search`/`getCanonical`) із тегом `products`; `reserveStock` інвалідує тег.
+- [x] Unit-тести (8/8): резервування, брак залишку → fault, канонічний shape, Money.
+- **Verify ✅:** SOAP e2e — Search(3) → Get → CheckStock → Reserve(10)→stock 90 → повторний Get=90 (кеш інвалідовано) → Reserve(999)→SOAP Fault.
 
 ## Фаза 3 — Order Management
 - [ ] DDD-домен: `Cart`, `Order`, `OrderLine` (Cart всередині OM — грубіша зернистість SOA).
@@ -150,6 +151,11 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
     endpoint — з `soap:address`. Це і є реальний SOA-патерн (клієнт/ESB тримає контракт).
   - Doctrine авто-імена індексів → зафіксував `UniqueConstraint(name:...)`, щоб `schema:validate`
     збігався з рукописною міграцією.
+- **Фаза 2 ✅** (2026-07-28). Product & Inventory (каталог + наявність + Redis-кеш).
+  - Redis через framework cache-пул `catalog.cache` (tag-aware); читання тегуються `products`,
+    `ReserveStock` викликає `invalidateTags(['products'])` — e2e підтвердив (повторний Get=90, не стале 100).
+  - Seed з фіксованими UUID (11111111…/22222222…/33333333…) — Order-фаза посилатиметься на них.
+  - Патерн сервісу ідентичний Фазі 1 (Doctrine ORM3 + native SOAP + controllers public+tag).
 
 ## Review
 _(заповнюється по завершенню)_

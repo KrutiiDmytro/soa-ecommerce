@@ -60,7 +60,7 @@ services:
   product-inventory:
     <<: *php-service
     environment: { SERVICE_NAME: product-inventory }
-    volumes: ["./services/product-inventory:/app"]
+    volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
     depends_on: [db-product, redis]
 
   order-management:
