@@ -72,7 +72,7 @@ services:
   fulfillment:
     <<: *php-service
     environment: { SERVICE_NAME: fulfillment }
-    volumes: ["./services/fulfillment:/app"]
+    volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
     depends_on: [db-fulfillment, rabbitmq]
 
   notification:

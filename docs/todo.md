@@ -72,14 +72,23 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
   CancelOrder (CANCELLED) → повторний Cancel → Fault; checkout неіснуючого/порожнього кошика → Fault.
   Кошик після checkout видалено разом із рядками (cascade).
 
-## Фаза 4 — Fulfillment (оплата + доставка)
-- [ ] DDD-домен: `Payment`, `Shipment`, `TrackingEvent` (event-sourced трекінг).
-- [ ] Своя схема БД (`fulfillment`), міграція.
-- [ ] SOAP-endpoint: `AuthorizePayment`, `CapturePayment`, `CreateShipment`, `TrackShipment`.
-- [ ] Провайдери за seam: `PaymentProvider` (Stripe/fake), `ShippingProvider` (НоваПошта/fake); default = fake.
-- [ ] Публікація подій `PaymentCaptured`, `ShipmentDispatched` (AMQP).
-- [ ] Unit-тести (авторизація→capture, ідемпотентність shipment).
-- **Verify:** `AuthorizePayment` (fake) → `CapturePayment` → подія; `CreateShipment` → трекінг.
+## Фаза 4 — Fulfillment (оплата + доставка) ✅
+- [x] DDD-домен: `Payment`, `Shipment`, `TrackingEvent` (event-sourced трекінг, append-only).
+- [x] Своя схема БД (`fulfillment`), міграція (`Version20260730000004`), `schema:validate` зелений.
+- [x] SOAP-endpoint: `AuthorizePayment`, `CapturePayment`, `CreateShipment`, `TrackShipment`
+      (у WSDL з Task-27 було лише 2 операції-зразки — розширено, + локальні типи
+      `PaymentStatus`/`ShipmentStatus`/`TrackingEvent`).
+- [x] Провайдери за seam: `PaymentProvider` (fake/Stripe), `ShippingProvider` (fake/Нова Пошта);
+      вибір через `PAYMENT_PROVIDER`/`SHIPPING_PROVIDER`, default = fake.
+- [x] Публікація подій `payment.captured`, `shipment.dispatched` у topic-exchange
+      `printzone.events` (AMQP, ext-amqp).
+- [x] Unit-тести (21/21): переходи платежу, ідемпотентність, відмова провайдера, порядок
+      tracking-подій, публікація подій, вибір провайдера за env.
+- **Verify ✅:** SOAP e2e — AuthorizePayment → повторний повертає той самий `paymentId` →
+  сума понад ліміт fake-провайдера → Fault (у БД лишається FAILED-платіж) → CapturePayment
+  (CAPTURED) → повторний → Fault → CreateShipment (tracking `FAKEUA…`) → повторний той самий
+  `shipmentId` → TrackShipment: DISPATCHED + історія CREATED→DISPATCHED → трекінг неіснуючого → Fault.
+  Черга-зонд на `printzone.events` реально отримала `payment.captured` і `shipment.dispatched`.
 
 ## Фаза 5 — Notification (stateless утиліта)
 - [ ] `SendNotification` (SOAP) + async-споживач подій (`OrderPlaced`, `PaymentCaptured`, `ShipmentDispatched`).
@@ -175,6 +184,20 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
     `#[ORM\Index(name: 'idx_cart_item_cart', columns: ['cart_id'])]` на `CartItem`/`OrderLine`.
   - Money/Address лишили простими колонками (як ціна в Фазі 2), без Doctrine embeddable —
     менше магії, той самий патерн у трьох сервісах.
+- **Фаза 4 ✅** (2026-07-30, гілка `feat/phase4-fulfillment`). Fulfillment: оплата + доставка.
+  - **Події AMQP зробили вже тут** (не відкладали у Фазу 7): `EventPublisher` (порт) +
+    `AmqpEventPublisher` — topic-exchange `printzone.events`, durable, ключі
+    `payment.captured` / `shipment.dispatched`. З'єднання лениве, щоб `/health` не залежав
+    від брокера. Фазі 5 (Notification) вже є що споживати.
+  - **Ідемпотентність за `orderId`** (унікальний індекс) і для платежу, і для відправлення —
+    оркестрація ESB зможе безпечно повторити крок. Виняток: платіж у статусі FAILED
+    дозволяє повторну авторизацію (`reauthorize`).
+  - Провайдери за seam через фабрику (`ProviderFactory::payment/shipping` + env), домен бачить
+    лише порт. Реальні Stripe/Нова Пошта — скелети, що чесно падають без кредів, а не вдають успіх.
+    Нові env: `STRIPE_SECRET_KEY`, `NOVAPOSHTA_API_KEY` (порожні).
+  - Трекінг event-sourced: у `TrackingEvent` є `sequence_no` — без нього події однієї секунди
+    не мали б детермінованого порядку (`created_at` з точністю до секунди).
+  - `fulfillment` у compose так само не монтував `./contracts` — додано (та сама граблина, що у Фазі 3).
 
 ## Review
 _(заповнюється по завершенню)_
