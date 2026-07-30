@@ -66,7 +66,7 @@ services:
   order-management:
     <<: *php-service
     environment: { SERVICE_NAME: order-management }
-    volumes: ["./services/order-management:/app"]
+    volumes: ["./services/order-management:/app", "./contracts:/contracts:ro"]
     depends_on: [db-order]
 
   fulfillment:

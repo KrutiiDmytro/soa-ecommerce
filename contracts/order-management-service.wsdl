@@ -36,13 +36,20 @@
         </xsd:complexType>
       </xsd:element>
 
-      <!-- AddCartItem -->
+      <!--
+        AddCartItem: разом із товаром передається ЗНІМОК ціни з канонічного cdm:Product
+        (клієнт/ESB уже отримав його з SearchProducts). Order Management свідомо НЕ
+        звертається до Product & Inventory: у SOA сервіси не спілкуються напряму —
+        зведенням даних і резервуванням залишку керує оркестрація в ESB.
+      -->
       <xsd:element name="AddCartItemRequest">
         <xsd:complexType>
           <xsd:sequence>
             <xsd:element name="cartId" type="cdm:UUID"/>
             <xsd:element name="productId" type="cdm:UUID"/>
+            <xsd:element name="sku" type="xsd:string"/>
             <xsd:element name="quantity" type="xsd:int"/>
+            <xsd:element name="unitPrice" type="cdm:Money"/>
           </xsd:sequence>
         </xsd:complexType>
       </xsd:element>
@@ -89,6 +96,38 @@
         </xsd:complexType>
       </xsd:element>
 
+      <!-- MarkPaid: викликається оркестрацією ESB після успішної оплати (Fulfillment) -->
+      <xsd:element name="MarkPaidRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderId" type="cdm:UUID"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="MarkPaidResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="order" type="cdm:Order"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
+      <!-- CancelOrder -->
+      <xsd:element name="CancelOrderRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="orderId" type="cdm:UUID"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CancelOrderResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="order" type="cdm:Order"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+
       <!-- Fault -->
       <xsd:element name="OrderFault">
         <xsd:complexType>
@@ -110,6 +149,10 @@
   <wsdl:message name="CheckoutOut">   <wsdl:part name="body" element="tns:CheckoutResponse"/>   </wsdl:message>
   <wsdl:message name="GetOrderIn">    <wsdl:part name="body" element="tns:GetOrderRequest"/>    </wsdl:message>
   <wsdl:message name="GetOrderOut">   <wsdl:part name="body" element="tns:GetOrderResponse"/>   </wsdl:message>
+  <wsdl:message name="MarkPaidIn">    <wsdl:part name="body" element="tns:MarkPaidRequest"/>    </wsdl:message>
+  <wsdl:message name="MarkPaidOut">   <wsdl:part name="body" element="tns:MarkPaidResponse"/>   </wsdl:message>
+  <wsdl:message name="CancelOrderIn"> <wsdl:part name="body" element="tns:CancelOrderRequest"/> </wsdl:message>
+  <wsdl:message name="CancelOrderOut"><wsdl:part name="body" element="tns:CancelOrderResponse"/></wsdl:message>
   <wsdl:message name="OrderFaultMsg"> <wsdl:part name="body" element="tns:OrderFault"/>         </wsdl:message>
 
   <!-- ============ Port type (абстрактний інтерфейс) ============ -->
@@ -132,6 +175,16 @@
     <wsdl:operation name="GetOrder">
       <wsdl:input  message="tns:GetOrderIn"/>
       <wsdl:output message="tns:GetOrderOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="MarkPaid">
+      <wsdl:input  message="tns:MarkPaidIn"/>
+      <wsdl:output message="tns:MarkPaidOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="CancelOrder">
+      <wsdl:input  message="tns:CancelOrderIn"/>
+      <wsdl:output message="tns:CancelOrderOut"/>
       <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
     </wsdl:operation>
   </wsdl:portType>
@@ -163,12 +216,24 @@
       <wsdl:output><soap:body use="literal"/></wsdl:output>
       <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
     </wsdl:operation>
+    <wsdl:operation name="MarkPaid">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/MarkPaid"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="CancelOrder">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/CancelOrder"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
   </wsdl:binding>
 
   <!-- ============ Service (точка доступу через ESB) ============ -->
   <wsdl:service name="OrderManagementService">
     <wsdl:port name="OrderManagementPort" binding="tns:OrderManagementSoapBinding">
-      <soap:address location="https://esb.printzone.internal/services/order-management/v1"/>
+      <soap:address location="http://order-management/soap"/>
     </wsdl:port>
   </wsdl:service>
 

@@ -59,13 +59,18 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
 - [x] Unit-тести (8/8): резервування, брак залишку → fault, канонічний shape, Money.
 - **Verify ✅:** SOAP e2e — Search(3) → Get → CheckStock → Reserve(10)→stock 90 → повторний Get=90 (кеш інвалідовано) → Reserve(999)→SOAP Fault.
 
-## Фаза 3 — Order Management
-- [ ] DDD-домен: `Cart`, `Order`, `OrderLine` (Cart всередині OM — грубіша зернистість SOA).
-- [ ] Своя схема БД (`orders`), міграція.
-- [ ] SOAP-endpoint: `CreateCart`, `AddCartItem`, `Checkout`, `GetOrder`, `CancelOrder`.
-- [ ] Order lifecycle: PENDING → PAID → PROCESSING → SHIPPED → DELIVERED → CANCELLED.
-- [ ] Unit-тести (сума кошика, переходи статусів).
-- **Verify:** `Checkout` створює Order у стані PENDING з коректним total.
+## Фаза 3 — Order Management ✅
+- [x] DDD-домен: `Cart`, `CartItem`, `Order`, `OrderLine`, VO `Money`/`Address`, enum `OrderStatus`
+      (Cart всередині OM — грубіша зернистість SOA).
+- [x] Своя схема БД (`orders`), міграція (`Version20260730000003`), `schema:validate` зелений.
+- [x] SOAP-endpoint: `CreateCart`, `AddCartItem`, `Checkout`, `GetOrder`, `MarkPaid`, `CancelOrder`.
+- [x] Order lifecycle: PENDING → PAID → PROCESSING → SHIPPED → DELIVERED → CANCELLED
+      (матриця дозволених переходів у `OrderStatus::allowedTransitions()`).
+- [x] Unit-тести (19/19): сума кошика, злиття рядків, знімок при checkout, переходи статусів, канон.
+- **Verify ✅:** SOAP e2e — CreateCart → AddCartItem ×3 (третій злився, lineCount 2) → Checkout
+  (PENDING, total 99600 UAH) → GetOrder → MarkPaid (PAID) → повторний MarkPaid → SOAP Fault →
+  CancelOrder (CANCELLED) → повторний Cancel → Fault; checkout неіснуючого/порожнього кошика → Fault.
+  Кошик після checkout видалено разом із рядками (cascade).
 
 ## Фаза 4 — Fulfillment (оплата + доставка)
 - [ ] DDD-домен: `Payment`, `Shipment`, `TrackingEvent` (event-sourced трекінг).
@@ -122,6 +127,7 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
 | **Оркестрація** checkout у ESB | контраст із хореографією мікросервісів |
 | **Централізований IAM** (CM видає токен) | вимога завдання; єдина точка ідентичності |
 | **SOAP/WSDL** контракт-first (5 сервісів) | enterprise-дисципліна контрактів (WS-*) |
+| **Знімок ціни** в `AddCartItem` замість виклику OM → PI | сервіси не спілкуються напряму; зведення даних і резервування залишку робить оркестрація ESB (Фаза 6) |
 
 ## Ризики / відкриті питання
 - Обсяг великий (5 сервісів + ESB) → беремо **пофазно**, з check-in і verify перед наступною фазою.
@@ -156,6 +162,19 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
     `ReserveStock` викликає `invalidateTags(['products'])` — e2e підтвердив (повторний Get=90, не стале 100).
   - Seed з фіксованими UUID (11111111…/22222222…/33333333…) — Order-фаза посилатиметься на них.
   - Патерн сервісу ідентичний Фазі 1 (Doctrine ORM3 + native SOAP + controllers public+tag).
+- **Фаза 3 ✅** (2026-07-30). Order Management (кошик + checkout + життєвий цикл замовлення).
+  - **SOA-рішення:** OM автономний і НЕ звертається до Product & Inventory. `AddCartItemRequest`
+    розширено полями `sku` + `unitPrice` (`cdm:Money`) — знімок ціни з канонічного `Product`,
+    який клієнт уже отримав із `SearchProducts`. Заготовку `CatalogPort`/`SoapCatalogClient`
+    з чернетки прибрано: прямий виклик сервіс→сервіс = ознака мікросервісів.
+  - У WSDL додано `MarkPaid` — її викликатиме оркестрація ESB (Фаза 6) після `AuthorizePayment`.
+  - `order-management` у `docker-compose.yml` не монтував `./contracts` (на відміну від CM/PI) →
+    додано, інакше `SoapServer` не читає WSDL.
+  - Знову граблі Фази 1: Doctrine сам іменує індекси join-колонок (`IDX_E49A10F1…`) →
+    `schema:validate` розходився з рукописною міграцією. Фікс — явний
+    `#[ORM\Index(name: 'idx_cart_item_cart', columns: ['cart_id'])]` на `CartItem`/`OrderLine`.
+  - Money/Address лишили простими колонками (як ціна в Фазі 2), без Doctrine embeddable —
+    менше магії, той самий патерн у трьох сервісах.
 
 ## Review
 _(заповнюється по завершенню)_
