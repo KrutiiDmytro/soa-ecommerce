@@ -90,12 +90,18 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
   `shipmentId` → TrackShipment: DISPATCHED + історія CREATED→DISPATCHED → трекінг неіснуючого → Fault.
   Черга-зонд на `printzone.events` реально отримала `payment.captured` і `shipment.dispatched`.
 
-## Фаза 5 — Notification (stateless утиліта)
-- [ ] `SendNotification` (SOAP) + async-споживач подій (`OrderPlaced`, `PaymentCaptured`, `ShipmentDispatched`).
-- [ ] Email-шлюз за seam (SES/fake); шаблони листів (order confirmation, shipment dispatched).
-- [ ] Без власної БД (stateless) — за дизайном.
-- [ ] Unit-тести (вибір шаблону за подією).
-- **Verify:** подія `OrderPlaced` у черзі → NT формує і «відправляє» лист (fake-gateway лог).
+## Фаза 5 — Notification (stateless утиліта) ✅
+- [x] `SendNotification` (SOAP) + async-споживач `app:consume-events` (черга `notification.events`,
+      ключі `order.placed`, `payment.captured`, `shipment.dispatched`); окремий контейнер
+      `notification-worker` на тому самому образі.
+- [x] Email-шлюз за seam (`MailGateway`: fake-лог / SES-скелет, вибір через `NOTIFICATION_GATEWAY`);
+      шаблони `order_confirmation`, `payment_receipt`, `shipment_dispatched` + `plain` для вільного тексту.
+- [x] Без власної БД (stateless) — за дизайном; дедуп оброблених подій — Redis-кеш із TTL 24 год.
+- [x] Unit-тести (15/15): рендер шаблонів, подія→шаблон, fallback-адреса, дедуп, відмова на канал SMS.
+- **Verify ✅:** SOAP — `SendNotification` за шаблоном і вільним текстом, невідомий шаблон / канал SMS → Fault.
+  Асинхрон наскрізно: `CapturePayment` + `CreateShipment` у Fulfillment → події в `printzone.events` →
+  воркер сформував і «відправив» обидва листи (лог `var/mail/sent.log`, у темі — правильний `orderId`).
+  Дедуп перевірено на живому воркері: та сама подія двічі → `sent` + `skipped`, лист один.
 
 ## Фаза 6 — ESB (серце SOA)
 - [ ] SOAP-шлюз (єдина точка входу клієнта); клієнти не звертаються до сервісів напряму.
@@ -198,6 +204,19 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
   - Трекінг event-sourced: у `TrackingEvent` є `sequence_no` — без нього події однієї секунди
     не мали б детермінованого порядку (`created_at` з точністю до секунди).
   - `fulfillment` у compose так само не монтував `./contracts` — додано (та сама граблина, що у Фазі 3).
+- **Фаза 5 ✅** (2026-07-31, гілка `feat/phase5-notification`). Notification: SOAP + споживач подій.
+  - **Адреса отримувача.** Події Fulfillment несуть лише `orderId` — пошти клієнта Fulfillment
+    не знає й дізнаватися не має права (сервіси не спілкуються напряму). Тому споживач бере
+    `payload.recipient` / `payload.customerEmail`, а якщо їх нема — шле на службову
+    `NOTIFICATION_FALLBACK_EMAIL`. Правильне рішення — **збагачення події адресою в ESB**
+    (Фаза 6: оркестрація публікує `order.placed` з поштою клієнта, яку має з checkout-запиту).
+  - **Контракт розширено:** у `SendNotificationRequest` додано `recipient` і повторюваний
+    `parameter` (name/value), `body` став опційним — усі дані для листа дає викликач/ESB,
+    бо сервіс stateless і нічого не дочитує.
+  - **Дедуп без БД:** відмітка `seen_<eventId>` у Redis-пулі `notification.cache` (TTL 24 год) —
+    at-least-once доставка більше не дублює листи. Перевірено на живому воркері.
+  - Воркер у compose перекриває `entrypoint` (базовий піднімає `php -S`), тому composer-install
+    із базового entrypoint не спрацював би — у команді воркера це продубльовано явно.
 
 ## Review
 _(заповнюється по завершенню)_
