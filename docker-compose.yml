@@ -78,8 +78,16 @@ services:
   notification:
     <<: *php-service
     environment: { SERVICE_NAME: notification }
-    volumes: ["./services/notification:/app"]
-    depends_on: [rabbitmq]
+    volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
+    depends_on: [rabbitmq, redis]
+
+  # Асинхронний споживач подій шини (той самий код, інша точка входу)
+  notification-worker:
+    <<: *php-service
+    environment: { SERVICE_NAME: notification }
+    volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
+    depends_on: [rabbitmq, redis, notification]
+    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php bin/console app:consume-events"]
 
   # ---------- ESB (єдина публічна точка входу) ----------
   esb:

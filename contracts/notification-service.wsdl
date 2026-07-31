@@ -22,13 +22,24 @@
         </xsd:restriction>
       </xsd:simpleType>
 
+      <!-- Параметри шаблону: сервіс stateless і нічого не дочитує з інших сервісів,
+           тож усі дані для листа (включно з адресою отримувача) передає викликач/ESB. -->
+      <xsd:complexType name="TemplateParameter">
+        <xsd:sequence>
+          <xsd:element name="name" type="xsd:string"/>
+          <xsd:element name="value" type="xsd:string"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
       <xsd:element name="SendNotificationRequest">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="customerId" type="cdm:UUID"/>
+          <xsd:element name="recipient" type="xsd:string"/>
           <xsd:element name="channel" type="tns:Channel"/>
           <xsd:element name="template" type="xsd:string"/>
+          <xsd:element name="parameter" type="tns:TemplateParameter" minOccurs="0" maxOccurs="unbounded"/>
           <xsd:element name="subject" type="xsd:string" minOccurs="0"/>
-          <xsd:element name="body" type="xsd:string"/>
+          <xsd:element name="body" type="xsd:string" minOccurs="0"/>
         </xsd:sequence></xsd:complexType>
       </xsd:element>
       <xsd:element name="SendNotificationResponse">
@@ -71,7 +82,7 @@
 
   <wsdl:service name="NotificationService">
     <wsdl:port name="NotificationPort" binding="tns:NotificationSoapBinding">
-      <soap:address location="https://esb.printzone.internal/services/notification/v1"/>
+      <soap:address location="http://notification/soap"/>
     </wsdl:port>
   </wsdl:service>
 </wsdl:definitions>
