@@ -68,6 +68,15 @@ class Product
         $this->stockAvailable -= $quantity;
     }
 
+    /** Компенсація резерву: повертає кількість у доступний залишок. */
+    public function release(int $quantity): void
+    {
+        if ($quantity <= 0) {
+            throw new \InvalidArgumentException('Release quantity must be positive');
+        }
+        $this->stockAvailable += $quantity;
+    }
+
     public function id(): string
     {
         return $this->id;

@@ -103,16 +103,28 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
   воркер сформував і «відправив» обидва листи (лог `var/mail/sent.log`, у темі — правильний `orderId`).
   Дедуп перевірено на живому воркері: та сама подія двічі → `sent` + `skipped`, лист один.
 
-## Фаза 6 — ESB (серце SOA)
-- [ ] SOAP-шлюз (єдина точка входу клієнта); клієнти не звертаються до сервісів напряму.
-- [ ] **Content-based routing** до CM/PI/OM/FF за операцією/namespace.
-- [ ] **Канонічна трансформація** (канон ↔ внутрішній формат сервісу).
-- [ ] **Оркестрація Checkout** (BPEL-стиль, стан процесу в ESB) за §05:
-      `ReserveStock`(PI) → `CreateOrder`(OM) → `AuthorizePayment`(FF, sync) → `MarkPaid`(OM) →
-      `CreateShipment`(FF, async AMQP) → `SendOrderConfirmation`(NT, async); компенсація при збої (звільнити резерв / скасувати).
-- [ ] **WS-Security / централізована перевірка токена** IAM на вході в ESB.
-- [ ] **Service registry:** статичний каталог WSDL усіх 5 (JSON/endpoint) для discovery.
-- **Verify:** один SOAP `Checkout` до ESB проганяє весь ланцюг PI→OM→FF→NT; при падінні PI резерв звільнено.
+## Фаза 6 — ESB (серце SOA) ✅
+- [x] SOAP-шлюз: єдина точка входу `POST /soap` на `:8080`; сервіси лишаються всередині мережі.
+      `GET /soap?wsdl=<service>` віддає контракт із **підміненою на ESB адресою**, `?xsd=…` — канонічну модель.
+- [x] **Content-based routing**: маршрут визначає namespace/операція із самого конверта
+      (`MessageInspector` + таблиця в `ServiceRegistry`), а не URL.
+- [x] **Канонічна трансформація** (`CanonicalTransformer`): канонічний кошик → окремі
+      `ReserveStock(productId, quantity)`; `cdm:Money`/`cdm:Address` → виклики сервісів;
+      збагачення події `order.placed` поштою клієнта, якої немає в жодного сервісу нижче.
+- [x] **Оркестрація Checkout** (стан процесу в ESB) за §05: `GetCart`(OM) → `ReserveStock`(PI, по рядках)
+      → `Checkout`(OM) → `AuthorizePayment`+`CapturePayment`(FF, sync) → `MarkPaid`(OM) →
+      async AMQP: `shipment.requested`(FF-воркер) + `order.placed`(NT). Компенсація: `ReleaseStock` + `CancelOrder`.
+- [x] **WS-Security / централізована перевірка токена**: ESB читає `<wsse:Security>`
+      (BinarySecurityToken із IAM-JWT + `wsu:Timestamp`), перевіряє підпис HS256, строк і свіжість,
+      після чого **знімає заголовок** (роль WS-Security intermediary). Публічні операції — без токена.
+- [x] **Service registry:** `GET /registry` — JSON-каталог 6 контрактів (5 сервісів + оркестрація).
+- [x] Передумови в сервісах: `ReleaseStock` (PI) для компенсації і `GetCart` (OM) для оркестрації.
+- **Verify ✅:** клієнт ходить ЛИШЕ в ESB і тягне контракти з нього ж по HTTP:
+  `SearchProducts` без токена → 3 товари; `RegisterCustomer`+`Authenticate` → токен;
+  `CreateCart` без токена → Fault; з токеном → кошик; **один `Checkout` до ESB** → order PAID,
+  paymentId, залишок −2; async: воркер створив `FAKEUA3956`, лист `order_confirmation` пішов на
+  **реальну пошту клієнта** (збагачення в ESB). Компенсація: сума 1 016 600 > ліміту → Fault
+  «released 1 reservation(s), order … cancelled», залишок 90 → 90. Unit: esb 16, PI 10, OM 20, FF 21, NT 15.
 
 ## Фаза 7 — Асинхрон (AMQP) + кеш (наскрізне)
 - [ ] RabbitMQ: `OrderPlaced`, `StockLevelChanged`, `PaymentCaptured`, `ShipmentDispatched` (медіація ESB).
@@ -217,6 +229,22 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
     at-least-once доставка більше не дублює листи. Перевірено на живому воркері.
   - Воркер у compose перекриває `entrypoint` (базовий піднімає `php -S`), тому composer-install
     із базового entrypoint не спрацював би — у команді воркера це продубльовано явно.
+- **Фаза 6 ✅** (2026-07-31, гілка `feat/phase6-esb`). ESB: routing + медіація + оркестрація + registry.
+  - **`mustUnderstand` ламає проксі.** PHP `SoapServer` намагається викликати метод із назвою
+    заголовка → `Function "Security" is not a valid method`. Правильна поведінка й водночас фікс:
+    ESB як WS-Security **intermediary** знімає `<wsse:Security>` після перевірки політики
+    (`MessageInspector::withoutSecurityHeader`) і далі сервісу йде чистий конверт.
+  - **Адреса в WSDL береться із запиту**, а не з env: клієнт з хоста бачить `localhost:8080`,
+    клієнт усередині мережі — `http://esb`. Інакше відносний `schemaLocation` канонічної XSD
+    ззовні не резолвиться (та сама граблина, що у Фазі 1).
+  - **Проксі через `__call`** — один клас замість 20+ підписів операцій п'яти контрактів;
+    `SoapServer::setObject` це приймає, бо `is_callable` враховує `__call`.
+  - **Компенсація вимагала нових операцій**: `ReleaseStock` у PI (без неї резерв нічим не
+    відкотити) і `GetCart` в OM (ESB має прочитати позиції, щоб їх зарезервувати).
+  - **Async-гілка стала справді асинхронною**: доданий `fulfillment-worker` споживає
+    `shipment.requested`, тож ESB не тримає клієнта на створенні відправлення (§05.4).
+  - Dev-режим: перший запит до сервісу прогріває кеш до ~90 с → e2e спершу «стукає» в `/health`
+    кожного сервісу і піднімає `default_socket_timeout`.
 
 ## Review
 _(заповнюється по завершенню)_

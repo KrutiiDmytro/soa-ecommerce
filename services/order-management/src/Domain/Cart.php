@@ -79,6 +79,17 @@ class Cart
         return $total ?? Money::zero('UAH');
     }
 
+    /** Канонічне представлення кошика (читає оркестрація ESB перед резервуванням). */
+    public function toCanonical(): array
+    {
+        return [
+            'cartId' => $this->id,
+            'customerId' => $this->customerId,
+            'line' => array_map(static fn (CartItem $item): array => $item->toCanonical(), $this->items()),
+            'total' => $this->total()->toCanonical(),
+        ];
+    }
+
     public function id(): string
     {
         return $this->id;

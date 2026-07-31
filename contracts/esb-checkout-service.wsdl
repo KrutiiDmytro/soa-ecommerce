@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Контракт ОРКЕСТРАЦІЇ (ESB), а не окремого сервісу: одна операція Checkout запускає
+  бізнес-процес, який диригує Product & Inventory, Order Management, Fulfillment і
+  Notification (Task 27 §05). Стан процесу тримає ESB; при збої виконується компенсація.
+  WSDL 1.1, document/literal, SOAP 1.1.
+-->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                  xmlns:cdm="urn:printzone:soa:canonical:v1"
+                  xmlns:tns="urn:printzone:soa:esb-checkout:v1"
+                  targetNamespace="urn:printzone:soa:esb-checkout:v1">
+
+  <wsdl:types>
+    <xsd:schema targetNamespace="urn:printzone:soa:esb-checkout:v1" elementFormDefault="qualified">
+      <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
+
+      <xsd:element name="CheckoutRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="cartId" type="cdm:UUID"/>
+          <xsd:element name="customerId" type="cdm:UUID"/>
+          <xsd:element name="customerEmail" type="xsd:string"/>
+          <xsd:element name="shippingAddress" type="cdm:Address"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CheckoutResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="order" type="cdm:Order"/>
+          <xsd:element name="paymentId" type="cdm:UUID"/>
+          <xsd:element name="shipmentRequested" type="xsd:boolean"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="CheckoutFault">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="code" type="xsd:string"/>
+          <xsd:element name="message" type="xsd:string"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+
+  <wsdl:message name="CheckoutIn">      <wsdl:part name="body" element="tns:CheckoutRequest"/>  </wsdl:message>
+  <wsdl:message name="CheckoutOut">     <wsdl:part name="body" element="tns:CheckoutResponse"/> </wsdl:message>
+  <wsdl:message name="CheckoutFaultMsg"><wsdl:part name="body" element="tns:CheckoutFault"/>    </wsdl:message>
+
+  <wsdl:portType name="CheckoutOrchestrationPort">
+    <wsdl:operation name="Checkout">
+      <wsdl:input message="tns:CheckoutIn"/>
+      <wsdl:output message="tns:CheckoutOut"/>
+      <wsdl:fault name="CheckoutFault" message="tns:CheckoutFaultMsg"/>
+    </wsdl:operation>
+  </wsdl:portType>
+
+  <wsdl:binding name="CheckoutOrchestrationSoapBinding" type="tns:CheckoutOrchestrationPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="Checkout">
+      <soap:operation soapAction="urn:printzone:soa:esb-checkout:v1/Checkout"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="CheckoutFault"><soap:fault name="CheckoutFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+  </wsdl:binding>
+
+  <wsdl:service name="CheckoutOrchestrationService">
+    <wsdl:port name="CheckoutOrchestrationPort" binding="tns:CheckoutOrchestrationSoapBinding">
+      <soap:address location="http://esb/soap"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

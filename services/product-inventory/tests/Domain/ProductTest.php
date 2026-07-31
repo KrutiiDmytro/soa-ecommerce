@@ -36,6 +36,21 @@ final class ProductTest extends TestCase
         $this->product()->reserve(0);
     }
 
+    public function testReleaseReturnsStock(): void
+    {
+        $product = $this->product(10);
+        $product->reserve(4);
+        $product->release(4);
+
+        self::assertSame(10, $product->stockAvailable());
+    }
+
+    public function testReleaseNonPositiveThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->product()->release(0);
+    }
+
     public function testHasStock(): void
     {
         $product = $this->product(5);
