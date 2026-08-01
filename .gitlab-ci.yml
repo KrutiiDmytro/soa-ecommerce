@@ -11,6 +11,14 @@ stages:
   - unit
   - integration
 
+# Пайплайн лише там, де він потрібен: MR, develop і main (реліз).
+# Без цього прогін стартував би на кожен пуш у будь-яку гілку, а раннер спільний із Task-25.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
 variables:
   DOCKER_DRIVER: overlay2
   SOA_IMAGE: printzone-soa-php:8.2
@@ -18,6 +26,10 @@ variables:
   COMPONENTS: "services/customer-management services/product-inventory services/order-management services/fulfillment services/notification esb"
 
 default:
+  # Раннер #303 (спільний із Task-25) тегований — без цього тегу він джоби не забирає
+  # і пайплайн вічно висить у stuck.
+  tags:
+    - Веб-разработка
   image: docker:27
   services:
     - docker:27-dind
