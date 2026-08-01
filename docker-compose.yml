@@ -118,6 +118,17 @@ services:
       - fulfillment
       - notification
 
+  # Наскрізні тести: клієнт бачить лише ESB. Разовий запуск, не піднімається з `up`:
+  #   docker compose run --rm e2e
+  e2e:
+    <<: *php-service
+    profiles: ["test"]
+    restart: "no"
+    environment: { SERVICE_NAME: e2e }
+    volumes: ["./tests:/app", "./contracts:/contracts:ro"]
+    depends_on: [esb]
+    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php vendor/bin/phpunit"]
+
 volumes:
   pg-customer:
   pg-product:

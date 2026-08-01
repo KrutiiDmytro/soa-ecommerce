@@ -3,10 +3,16 @@
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          bootstrap="vendor/autoload.php"
          colors="true"
+         defaultTestSuite="unit"
          cacheDirectory=".phpunit.cache">
     <testsuites>
+        <!-- Домен ізольовано: без БД і без мережі -->
         <testsuite name="unit">
-            <directory>tests</directory>
+            <directory>tests/Domain</directory>
+        </testsuite>
+        <!-- Справжній SOAP-виклик до піднятого сервісу + реальна БД -->
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
 </phpunit>
