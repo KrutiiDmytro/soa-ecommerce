@@ -2,7 +2,9 @@
 
 namespace App;
 
+use App\Domain\EventPublisher;
 use App\Domain\ProductRepository;
+use App\Infrastructure\AmqpEventPublisher;
 use App\Infrastructure\DoctrineProductRepository;
 use App\Soap\SoapEndpointController;
 use Doctrine\Bundle\DoctrineBundle\DoctrineBundle;
@@ -36,6 +38,8 @@ class Kernel extends BaseKernel
                 'default_redis_provider' => '%env(REDIS_DSN)%',
                 'pools' => [
                     'catalog.cache' => ['adapter' => 'cache.app', 'tags' => true],
+                    // Read-model залишків: живе поза кешем читань, бо це проекція подій.
+                    'projection.cache' => ['adapter' => 'cache.app'],
                 ],
             ],
         ]);
@@ -74,14 +78,17 @@ class Kernel extends BaseKernel
             ->exclude([__DIR__.'/Kernel.php', __DIR__.'/Domain']);
 
         $services->alias(ProductRepository::class, DoctrineProductRepository::class);
+        $services->alias(EventPublisher::class, AmqpEventPublisher::class);
 
         $services->set(HealthController::class)->public()->tag('controller.service_arguments');
         $services->set(SoapEndpointController::class)->public()->tag('controller.service_arguments');
+        $services->set(StockProjectionController::class)->public()->tag('controller.service_arguments');
     }
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
         $routes->add('health', '/health')->controller(HealthController::class);
         $routes->add('soap', '/soap')->controller(SoapEndpointController::class);
+        $routes->add('stock_projection', '/stock-projection')->controller(StockProjectionController::class);
     }
 }
