@@ -23,8 +23,6 @@ workflow:
 variables:
   DOCKER_DRIVER: overlay2
   SOA_IMAGE: printzone-soa-php:8.2
-  # Сервіси + ESB. Тестові сюїти в них однакові за структурою.
-  COMPONENTS: "services/customer-management services/product-inventory services/order-management services/fulfillment services/notification esb"
 
 default:
   # Раннер #303 (спільний із Task-25) тегований — без цього тегу він джоби не забирає
@@ -156,5 +154,9 @@ integration:
     - echo "=== e2e через ESB ==="
     - docker compose run --rm e2e
   after_script:
+    # compose монтує ./services/* і ./esb у контейнери, де entrypoint пише vendor/ і var/
+    # від root. Без цього кроку git clean наступного пайплайна впаде з «Permission denied».
+    # Першим рядком — щоб виконалось навіть якщо збір логів або down зламається.
+    - docker run --rm -v "$PWD:/w" busybox chown -R "$(id -u):$(id -g)" /w || true
     - docker compose logs --tail 50 esb notification-worker fulfillment-worker product-inventory-worker || true
     - docker compose down -v || true
