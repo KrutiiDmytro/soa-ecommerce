@@ -54,6 +54,47 @@ final class ShopScenario
         throw new \RuntimeException(sprintf('Товару "%s" немає в каталозі', $sku));
     }
 
+    /**
+     * Найдешевший товар, якого точно вистачить на покупку. Прив'язка до конкретного SKU
+     * робила сценарій одноразовим: залишок скінчувався після кількох прогонів по тій самій БД
+     * (поповнити — `app:seed-products --reset-stock`).
+     */
+    public function productWithStock(int $needed): object
+    {
+        foreach ($this->catalog() as $product) {
+            if ((int) $product->stockAvailable >= $needed) {
+                return $product;
+            }
+        }
+
+        throw new \RuntimeException(sprintf(
+            'У каталозі немає товару із залишком >= %d. Поповніть: app:seed-products --reset-stock',
+            $needed,
+        ));
+    }
+
+    /**
+     * Товар і кількість, які гарантовано пробивають ліміт fake-провайдера оплати
+     * (і при цьому фізично є на складі, щоб збій стався саме на оплаті, а не на резерві).
+     *
+     * @return array{0: object, 1: int}
+     */
+    public function purchaseExceedingPaymentLimit(int $limitMinor = 1_000_000): array
+    {
+        $catalog = $this->catalog();
+        usort($catalog, static fn ($a, $b) => $b->price->amountMinor <=> $a->price->amountMinor);
+
+        foreach ($catalog as $product) {
+            $quantity = intdiv($limitMinor, (int) $product->price->amountMinor) + 1;
+
+            if ((int) $product->stockAvailable >= $quantity) {
+                return [$product, $quantity];
+            }
+        }
+
+        throw new \RuntimeException('Немає товару із залишком, достатнім, щоб пробити ліміт оплати');
+    }
+
     public function stockOf(string $productId): int
     {
         return (int) $this->esb->forContract('product-inventory')->GetProduct(['productId' => $productId])->product->stockAvailable;

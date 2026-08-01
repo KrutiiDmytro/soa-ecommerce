@@ -1,0 +1,111 @@
+# CI Task 28 (SOA). Три стадії відповідають трьом рівням тестів із docs/todo.md §8.
+#
+# lint        — синтаксис PHP + валідність контрактів (WSDL/XSD мають лишатись коректним XML);
+# unit        — домен кожного сервісу ізольовано, без БД, брокера й мережі;
+# integration — піднятий стек: SOAP до кожного сервісу з реальною БД + наскрізний потік через ESB.
+#
+# Раннер має вміти docker (docker-in-docker або shell-раннер із доступом до сокета).
+
+stages:
+  - lint
+  - unit
+  - integration
+
+variables:
+  DOCKER_DRIVER: overlay2
+  SOA_IMAGE: printzone-soa-php:8.2
+  # Сервіси + ESB. Тестові сюїти в них однакові за структурою.
+  COMPONENTS: "services/customer-management services/product-inventory services/order-management services/fulfillment services/notification esb"
+
+default:
+  image: docker:27
+  services:
+    - docker:27-dind
+  before_script:
+    - docker info >/dev/null
+    - cp .env.example .env
+    - docker build -f docker/Dockerfile -t "$SOA_IMAGE" .
+
+# ---------- lint ----------
+
+lint:php:
+  stage: lint
+  script:
+    - |
+      docker run --rm -v "$PWD:/app" -w /app "$SOA_IMAGE" sh -c '
+        find services esb tests -name "*.php" -not -path "*/vendor/*" -print0 \
+          | xargs -0 -n1 php -l > /tmp/lint.txt || { cat /tmp/lint.txt; exit 1; }
+        echo "PHP OK: $(grep -c "No syntax errors" /tmp/lint.txt) файлів"
+      '
+
+lint:contracts:
+  stage: lint
+  script:
+    - |
+      docker run --rm -v "$PWD:/app" -w /app "$SOA_IMAGE" php -r '
+        $failed = 0;
+        foreach (glob("contracts/*.{wsdl,xsd}", GLOB_BRACE) as $contract) {
+            $document = new DOMDocument();
+            if (!@$document->load($contract)) {
+                fwrite(STDERR, "НЕВАЛІДНИЙ XML: $contract\n");
+                $failed = 1;
+                continue;
+            }
+            echo "OK $contract\n";
+        }
+        exit($failed);
+      '
+
+# ---------- unit ----------
+
+unit:
+  stage: unit
+  parallel:
+    matrix:
+      - COMPONENT:
+          - services/customer-management
+          - services/product-inventory
+          - services/order-management
+          - services/fulfillment
+          - services/notification
+          - esb
+  script:
+    - |
+      docker run --rm -v "$PWD/$COMPONENT:/app" -v "$PWD/contracts:/contracts:ro" -w /app "$SOA_IMAGE" sh -c '
+        composer install --no-interaction --no-progress --quiet
+        php vendor/bin/phpunit
+      '
+
+# ---------- integration + e2e ----------
+
+integration:
+  stage: integration
+  timeout: 30m
+  script:
+    - docker compose up -d
+    # Прогрів: entrypoint уже warmup-ить кеш, але БД піднімається довше за сервіси.
+    - |
+      for service in customer-management product-inventory order-management fulfillment notification esb; do
+        for attempt in $(seq 1 60); do
+          if docker compose exec -T esb curl -sf -m 30 "http://$service/health" >/dev/null 2>&1; then
+            echo "$service ok"; break
+          fi
+          [ "$attempt" = "60" ] && { echo "$service не піднявся"; exit 1; }
+          sleep 5
+        done
+      done
+    - docker compose exec -T product-inventory php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T customer-management php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T order-management php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T fulfillment php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T product-inventory php bin/console app:seed-products --reset-stock
+    - |
+      for service in customer-management product-inventory order-management fulfillment notification esb; do
+        echo "=== integration: $service ==="
+        docker compose exec -T "$service" php vendor/bin/phpunit --testsuite integration
+      done
+    - echo "=== e2e через ESB ==="
+    - docker compose run --rm e2e
+  after_script:
+    - docker compose logs --tail 50 esb notification-worker fulfillment-worker product-inventory-worker || true
+    - docker compose down -v || true

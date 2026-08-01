@@ -9,6 +9,19 @@ x-php-service: &php-service
   restart: unless-stopped
   env_file: .env
 
+# Тільки для HTTP-сервісів: entrypoint спершу ставить залежності й прогріває кеш,
+# тому порт відкривається не миттєво — готовність показує healthcheck.
+x-php-web: &php-web
+  healthcheck:
+    # `php -S` однопотоковий, а /health у dev-режимі коштує 2–10 с (змонтований код).
+    # Часті проби з'їдали до третини пропускної здатності й гальмували e2e, тому інтервал
+    # рідкий, а таймаут щедрий — інакше холодна проба гине раніше, ніж Symfony відповість.
+    test: ["CMD", "curl", "-fs", "http://localhost/health"]
+    interval: 60s
+    timeout: 30s
+    retries: 10
+    start_period: 240s
+
 services:
   # ---------- Інфраструктура ----------
   db-customer:
@@ -52,13 +65,13 @@ services:
 
   # ---------- SOA-сервіси (внутрішні, без публічних портів) ----------
   customer-management:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: customer-management }
     volumes: ["./services/customer-management:/app", "./contracts:/contracts:ro"]
     depends_on: [db-customer]
 
   product-inventory:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: product-inventory }
     volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
     depends_on: [db-product, redis]
@@ -69,16 +82,16 @@ services:
     environment: { SERVICE_NAME: product-inventory }
     volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
     depends_on: [db-product, redis, rabbitmq, product-inventory]
-    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php bin/console app:project-stock"]
+    command: ["php", "bin/console", "app:project-stock"]
 
   order-management:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: order-management }
     volumes: ["./services/order-management:/app", "./contracts:/contracts:ro"]
     depends_on: [db-order]
 
   fulfillment:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: fulfillment }
     volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
     depends_on: [db-fulfillment, rabbitmq]
@@ -89,10 +102,10 @@ services:
     environment: { SERVICE_NAME: fulfillment }
     volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
     depends_on: [db-fulfillment, rabbitmq, fulfillment]
-    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php bin/console app:consume-commands"]
+    command: ["php", "bin/console", "app:consume-commands"]
 
   notification:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: notification }
     volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
     depends_on: [rabbitmq, redis]
@@ -103,11 +116,11 @@ services:
     environment: { SERVICE_NAME: notification }
     volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
     depends_on: [rabbitmq, redis, notification]
-    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php bin/console app:consume-events"]
+    command: ["php", "bin/console", "app:consume-events"]
 
   # ---------- ESB (єдина публічна точка входу) ----------
   esb:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: esb }
     volumes: ["./esb:/app", "./contracts:/contracts:ro"]
     ports: ["8080:80"]
@@ -127,7 +140,7 @@ services:
     environment: { SERVICE_NAME: e2e }
     volumes: ["./tests:/app", "./contracts:/contracts:ro"]
     depends_on: [esb]
-    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php vendor/bin/phpunit"]
+    command: ["php", "vendor/bin/phpunit"]
 
 volumes:
   pg-customer:
