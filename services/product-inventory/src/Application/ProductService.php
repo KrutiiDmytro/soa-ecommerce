@@ -2,6 +2,7 @@
 
 namespace App\Application;
 
+use App\Domain\EventPublisher;
 use App\Domain\Product;
 use App\Domain\ProductException;
 use App\Domain\ProductRepository;
@@ -21,6 +22,7 @@ final class ProductService
         private readonly ProductRepository $products,
         #[Autowire(service: 'catalog.cache')]
         private readonly TagAwareCacheInterface $cache,
+        private readonly EventPublisher $events,
     ) {
     }
 
@@ -63,6 +65,7 @@ final class ProductService
 
         // Наявність змінилась → скидаємо кешовані читання каталогу.
         $this->cache->invalidateTags(['products']);
+        $this->publishStockLevel($product, 'reserved', $quantity);
 
         return $product;
     }
@@ -75,6 +78,7 @@ final class ProductService
         $this->products->save($product);
 
         $this->cache->invalidateTags(['products']);
+        $this->publishStockLevel($product, 'released', $quantity);
 
         return $product;
     }
@@ -82,5 +86,17 @@ final class ProductService
     private function get(string $id): Product
     {
         return $this->products->byId($id) ?? throw ProductException::notFound($id);
+    }
+
+    /** Подія шини: на неї підписана проекція залишків (див. app:project-stock). */
+    private function publishStockLevel(Product $product, string $operation, int $quantity): void
+    {
+        $this->events->publish('stock.level.changed', [
+            'productId' => $product->id(),
+            'sku' => $product->sku(),
+            'stockAvailable' => $product->stockAvailable(),
+            'operation' => $operation,
+            'quantity' => $quantity,
+        ]);
     }
 }

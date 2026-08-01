@@ -4,6 +4,7 @@
     "type": "project",
     "require": {
         "php": ">=8.2",
+        "ext-amqp": "*",
         "ext-json": "*",
         "ext-soap": "*",
         "doctrine/dbal": "^4.2",
@@ -11,6 +12,7 @@
         "doctrine/doctrine-migrations-bundle": "^3.4",
         "doctrine/orm": "^3.3",
         "symfony/cache": "7.4.*",
+        "symfony/console": "7.4.*",
         "symfony/framework-bundle": "7.4.*",
         "symfony/runtime": "7.4.*",
         "symfony/string": "7.4.*",

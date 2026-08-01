@@ -63,6 +63,14 @@ services:
     volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
     depends_on: [db-product, redis]
 
+  # Проекція залишків: read-model, побудований з подій stock.level.changed
+  product-inventory-worker:
+    <<: *php-service
+    environment: { SERVICE_NAME: product-inventory }
+    volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
+    depends_on: [db-product, redis, rabbitmq, product-inventory]
+    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php bin/console app:project-stock"]
+
   order-management:
     <<: *php-service
     environment: { SERVICE_NAME: order-management }

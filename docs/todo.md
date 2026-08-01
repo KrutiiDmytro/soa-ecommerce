@@ -126,11 +126,21 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
   **реальну пошту клієнта** (збагачення в ESB). Компенсація: сума 1 016 600 > ліміту → Fault
   «released 1 reservation(s), order … cancelled», залишок 90 → 90. Unit: esb 16, PI 10, OM 20, FF 21, NT 15.
 
-## Фаза 7 — Асинхрон (AMQP) + кеш (наскрізне)
-- [ ] RabbitMQ: `OrderPlaced`, `StockLevelChanged`, `PaymentCaptured`, `ShipmentDispatched` (медіація ESB).
-- [ ] Споживачі подій (NT + проекція залишків PI) — демонстрація async-стилю.
-- [ ] Redis під читання каталогу; інвалідація після `ReserveStock`.
-- **Verify:** після Checkout події лягають у черги; споживачі їх обробляють.
+## Фаза 7 — Асинхрон (AMQP) + кеш (наскрізне) ✅
+- [x] RabbitMQ, exchange `printzone.events` (topic, durable) — повний набір подій:
+      `order.placed` (публікує **ESB**, збагачуючи поштою клієнта), `stock.level.changed` (PI),
+      `payment.captured` і `shipment.dispatched` (FF), плюс команда `shipment.requested` (ESB→FF).
+- [x] Споживачі: `notification-worker` (листи), `fulfillment-worker` (створення відправлення),
+      **`product-inventory-worker` — проекція залишків** (`app:project-stock`).
+- [x] Проекція залишків як read-model у Redis (`projection.cache`): поточний рівень, ознака
+      `lowStock`, остання операція; будується ВИКЛЮЧНО з подій. Діагностичний перегляд —
+      `GET /stock-projection` (внутрішній, як `/health`).
+- [x] Redis під читання каталогу + інвалідація тегу `products` після `ReserveStock`/`ReleaseStock`.
+- **Verify ✅:** `rabbitmqctl list_queues` — `catalog.projection`, `fulfillment.commands`,
+  `notification.events`, у кожної 1 споживач і 0 необроблених. Після Checkout через ESB:
+  `GetProduct` віддав свіжий залишок 5 → 2 (кеш інвалідовано), проекція асинхронно оновилась до
+  того ж значення з `lowStock=true`, `reserved ×3`. Після відкоту оплати в проекції видно
+  `released ×34` — компенсація теж лишає слід у read-моделі. Unit PI: 19/19.
 
 ## Фаза 8 — Тестування
 - [ ] **Unit** — домен кожного з 5 сервісів (ізольовано).
@@ -245,6 +255,17 @@ RabbitMQ (async + ESB-медіація), Redis (кеш), Docker Compose. Зов�
     `shipment.requested`, тож ESB не тримає клієнта на створенні відправлення (§05.4).
   - Dev-режим: перший запит до сервісу прогріває кеш до ~90 с → e2e спершу «стукає» в `/health`
     кожного сервісу і піднімає `default_socket_timeout`.
+- **Фаза 7 ✅** (2026-08-01, гілка `feat/phase7-async-cache`). Наскрізний асинхрон + кеш.
+  - Бракувало лише `stock.level.changed`: PI отримав порт `EventPublisher` (той самий патерн,
+    що у FF) і публікує подію після `ReserveStock`/`ReleaseStock`.
+  - **Проекція = read-model, а не друга копія БД.** Живе в Redis-пулі `projection.cache`,
+    будується виключно з подій, тримає `lowStock`; сервіс лишається без другої схеми БД.
+  - **Граблі воркерів:** базовий entrypoint ставить залежності лише якщо `vendor/` ВІДСУТНІЙ.
+    Коли до `composer.json` додається новий пакет, а `vendor/` уже є, воркер крешить
+    (`Class "Symfony\Component\HttpKernel\Kernel" not found`) і рестартує по колу, доки
+    вручну не виконати `composer update` у сервісі. Стосується всіх трьох воркерів.
+  - Розкладка подій за власниками: домені події публікують сервіси (PI, FF), а процесні
+    (`order.placed`) — ESB, бо лише він знає контекст процесу (напр. пошту клієнта).
 
 ## Review
 _(заповнюється по завершенню)_
