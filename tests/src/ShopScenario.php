@@ -28,10 +28,16 @@ final class ShopScenario
         return $this;
     }
 
-    /** @return object[] канонічні товари, відсортовані за ціною */
+    /**
+     * @return object[] канонічні товари, відсортовані за ціною
+     *
+     * SoapClient віддає ОДИН елемент об'єктом, а не масивом із одного елемента,
+     * тож список завжди нормалізуємо — інакше каталог із одного товару зламає сценарій.
+     */
     public function catalog(): array
     {
-        $products = (array) $this->esb->forContract('product-inventory')->SearchProducts([])->product;
+        $products = $this->esb->forContract('product-inventory')->SearchProducts([])->product ?? [];
+        $products = \is_array($products) ? $products : [$products];
         usort($products, static fn ($a, $b) => $a->price->amountMinor <=> $b->price->amountMinor);
 
         return $products;
