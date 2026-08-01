@@ -100,11 +100,22 @@ unit:
           - services/notification
           - esb
   script:
+    # Джерела монтуємо ro і копіюємо в /app (WORKDIR образу): composer install іде від
+    # root, а раннер shell-типу ділить робочу теку між джобами — root-owned vendor/
+    # зламав би git clean усіх наступних. Так vendor/ і .phpunit.cache/ лишаються в шарі
+    # контейнера й зникають разом із --rm.
+    #
+    # На момент старту /app порожній, тож entrypoint пропускає свій composer install —
+    # залежності ставляться один раз, а не двічі, як було.
     - |
-      docker run --rm -v "$PWD/$COMPONENT:/app" -v "$PWD/contracts:/contracts:ro" -w /app "$SOA_IMAGE" sh -c '
-        composer install --no-interaction --no-progress --quiet
-        php vendor/bin/phpunit
-      '
+      docker run --rm \
+        -v "$PWD/$COMPONENT:/src:ro" \
+        -v "$PWD/contracts:/contracts:ro" \
+        "$SOA_IMAGE" sh -c '
+          cp -a /src/. /app/
+          composer install --no-interaction --no-progress --quiet
+          php vendor/bin/phpunit
+        '
 
 # ---------- integration + e2e ----------
 #
