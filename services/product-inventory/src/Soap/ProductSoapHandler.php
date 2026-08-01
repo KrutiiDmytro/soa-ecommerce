@@ -47,6 +47,19 @@ final class ProductSoapHandler
         });
     }
 
+    public function ReleaseStock(object $request): array
+    {
+        return $this->guard(function () use ($request): array {
+            $product = $this->products->releaseStock($request->productId, (int) $request->quantity);
+
+            return [
+                'productId' => $product->id(),
+                'released' => true,
+                'stockAvailable' => $product->stockAvailable(),
+            ];
+        });
+    }
+
     /**
      * @param callable():array $operation
      */

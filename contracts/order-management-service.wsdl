@@ -62,6 +62,31 @@
         </xsd:complexType>
       </xsd:element>
 
+      <!-- GetCart: оркестрація ESB читає позиції кошика, щоб зарезервувати їх у Product & Inventory -->
+      <xsd:complexType name="CartLine">
+        <xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+          <xsd:element name="sku" type="xsd:string"/>
+          <xsd:element name="quantity" type="xsd:int"/>
+          <xsd:element name="unitPrice" type="cdm:Money"/>
+          <xsd:element name="lineTotal" type="cdm:Money"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
+      <xsd:element name="GetCartRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="cartId" type="cdm:UUID"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetCartResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="cartId" type="cdm:UUID"/>
+          <xsd:element name="customerId" type="cdm:UUID"/>
+          <xsd:element name="line" type="tns:CartLine" minOccurs="0" maxOccurs="unbounded"/>
+          <xsd:element name="total" type="cdm:Money"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
       <!-- Checkout: кошик -> замовлення -->
       <xsd:element name="CheckoutRequest">
         <xsd:complexType>
@@ -145,6 +170,8 @@
   <wsdl:message name="CreateCartOut"> <wsdl:part name="body" element="tns:CreateCartResponse"/> </wsdl:message>
   <wsdl:message name="AddCartItemIn"> <wsdl:part name="body" element="tns:AddCartItemRequest"/> </wsdl:message>
   <wsdl:message name="AddCartItemOut"><wsdl:part name="body" element="tns:AddCartItemResponse"/></wsdl:message>
+  <wsdl:message name="GetCartIn">     <wsdl:part name="body" element="tns:GetCartRequest"/>     </wsdl:message>
+  <wsdl:message name="GetCartOut">    <wsdl:part name="body" element="tns:GetCartResponse"/>    </wsdl:message>
   <wsdl:message name="CheckoutIn">    <wsdl:part name="body" element="tns:CheckoutRequest"/>    </wsdl:message>
   <wsdl:message name="CheckoutOut">   <wsdl:part name="body" element="tns:CheckoutResponse"/>   </wsdl:message>
   <wsdl:message name="GetOrderIn">    <wsdl:part name="body" element="tns:GetOrderRequest"/>    </wsdl:message>
@@ -165,6 +192,11 @@
     <wsdl:operation name="AddCartItem">
       <wsdl:input  message="tns:AddCartItemIn"/>
       <wsdl:output message="tns:AddCartItemOut"/>
+      <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="GetCart">
+      <wsdl:input  message="tns:GetCartIn"/>
+      <wsdl:output message="tns:GetCartOut"/>
       <wsdl:fault name="OrderFault" message="tns:OrderFaultMsg"/>
     </wsdl:operation>
     <wsdl:operation name="Checkout">
@@ -200,6 +232,12 @@
     </wsdl:operation>
     <wsdl:operation name="AddCartItem">
       <soap:operation soapAction="urn:printzone:soa:order-management:v1/AddCartItem"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="GetCart">
+      <soap:operation soapAction="urn:printzone:soa:order-management:v1/GetCart"/>
       <wsdl:input><soap:body use="literal"/></wsdl:input>
       <wsdl:output><soap:body use="literal"/></wsdl:output>
       <wsdl:fault name="OrderFault"><soap:fault name="OrderFault" use="literal"/></wsdl:fault>

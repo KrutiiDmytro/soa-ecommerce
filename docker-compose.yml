@@ -75,6 +75,14 @@ services:
     volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
     depends_on: [db-fulfillment, rabbitmq]
 
+  # Асинхронна гілка оркестрації: команди shipment.requested від ESB
+  fulfillment-worker:
+    <<: *php-service
+    environment: { SERVICE_NAME: fulfillment }
+    volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
+    depends_on: [db-fulfillment, rabbitmq, fulfillment]
+    entrypoint: ["sh", "-c", "[ -d vendor ] || composer install --no-interaction --no-progress; exec php bin/console app:consume-commands"]
+
   notification:
     <<: *php-service
     environment: { SERVICE_NAME: notification }
@@ -93,7 +101,7 @@ services:
   esb:
     <<: *php-service
     environment: { SERVICE_NAME: esb }
-    volumes: ["./esb:/app"]
+    volumes: ["./esb:/app", "./contracts:/contracts:ro"]
     ports: ["8080:80"]
     depends_on:
       - customer-management

@@ -67,6 +67,18 @@ final class ProductService
         return $product;
     }
 
+    /** Компенсаційна операція: повертає резерв (використовує оркестрація ESB при відкаті). */
+    public function releaseStock(string $id, int $quantity): Product
+    {
+        $product = $this->get($id);
+        $product->release($quantity);
+        $this->products->save($product);
+
+        $this->cache->invalidateTags(['products']);
+
+        return $product;
+    }
+
     private function get(string $id): Product
     {
         return $this->products->byId($id) ?? throw ProductException::notFound($id);

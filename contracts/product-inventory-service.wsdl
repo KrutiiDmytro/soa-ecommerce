@@ -69,6 +69,21 @@
         </xsd:sequence></xsd:complexType>
       </xsd:element>
 
+      <!-- ReleaseStock: компенсаційна операція для оркестрації ESB (відкат резерву) -->
+      <xsd:element name="ReleaseStockRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+          <xsd:element name="quantity" type="xsd:int"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="ReleaseStockResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="productId" type="cdm:UUID"/>
+          <xsd:element name="released" type="xsd:boolean"/>
+          <xsd:element name="stockAvailable" type="xsd:int"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
       <xsd:element name="ProductFault">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="code" type="xsd:string"/>
@@ -86,6 +101,8 @@
   <wsdl:message name="CheckStockOut">    <wsdl:part name="body" element="tns:CheckStockResponse"/>    </wsdl:message>
   <wsdl:message name="ReserveStockIn">   <wsdl:part name="body" element="tns:ReserveStockRequest"/>   </wsdl:message>
   <wsdl:message name="ReserveStockOut">  <wsdl:part name="body" element="tns:ReserveStockResponse"/>  </wsdl:message>
+  <wsdl:message name="ReleaseStockIn">   <wsdl:part name="body" element="tns:ReleaseStockRequest"/>   </wsdl:message>
+  <wsdl:message name="ReleaseStockOut">  <wsdl:part name="body" element="tns:ReleaseStockResponse"/>  </wsdl:message>
   <wsdl:message name="ProductFaultMsg">  <wsdl:part name="body" element="tns:ProductFault"/>          </wsdl:message>
 
   <wsdl:portType name="ProductInventoryPort">
@@ -107,6 +124,11 @@
     <wsdl:operation name="ReserveStock">
       <wsdl:input message="tns:ReserveStockIn"/>
       <wsdl:output message="tns:ReserveStockOut"/>
+      <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="ReleaseStock">
+      <wsdl:input message="tns:ReleaseStockIn"/>
+      <wsdl:output message="tns:ReleaseStockOut"/>
       <wsdl:fault name="ProductFault" message="tns:ProductFaultMsg"/>
     </wsdl:operation>
   </wsdl:portType>
@@ -133,6 +155,12 @@
     </wsdl:operation>
     <wsdl:operation name="ReserveStock">
       <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/ReserveStock"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="ReleaseStock">
+      <soap:operation soapAction="urn:printzone:soa:product-inventory:v1/ReleaseStock"/>
       <wsdl:input><soap:body use="literal"/></wsdl:input>
       <wsdl:output><soap:body use="literal"/></wsdl:output>
       <wsdl:fault name="ProductFault"><soap:fault name="ProductFault" use="literal"/></wsdl:fault>
