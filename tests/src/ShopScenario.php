@@ -1,0 +1,86 @@
+<?php
+
+namespace E2E;
+
+/** Кроки покупця, з яких складаються наскрізні сценарії. */
+final class ShopScenario
+{
+    public string $email;
+    public string $customerId;
+    public string $token;
+
+    public function __construct(private readonly EsbClient $esb)
+    {
+    }
+
+    /** Реєстрація + автентифікація (обидві операції публічні). */
+    public function signUp(): self
+    {
+        $customers = $this->esb->forContract('customer-management');
+        $this->email = sprintf('e2e+%s@example.com', bin2hex(random_bytes(4)));
+        $this->customerId = $customers->RegisterCustomer([
+            'email' => $this->email,
+            'password' => 'secret123',
+            'fullName' => 'E2E Buyer',
+        ])->customerId;
+        $this->token = $customers->Authenticate(['email' => $this->email, 'password' => 'secret123'])->token;
+
+        return $this;
+    }
+
+    /** @return object[] канонічні товари, відсортовані за ціною */
+    public function catalog(): array
+    {
+        $products = (array) $this->esb->forContract('product-inventory')->SearchProducts([])->product;
+        usort($products, static fn ($a, $b) => $a->price->amountMinor <=> $b->price->amountMinor);
+
+        return $products;
+    }
+
+    public function product(string $sku): object
+    {
+        foreach ($this->catalog() as $product) {
+            if ($product->sku === $sku) {
+                return $product;
+            }
+        }
+
+        throw new \RuntimeException(sprintf('Товару "%s" немає в каталозі', $sku));
+    }
+
+    public function stockOf(string $productId): int
+    {
+        return (int) $this->esb->forContract('product-inventory')->GetProduct(['productId' => $productId])->product->stockAvailable;
+    }
+
+    public function cartWith(object $product, int $quantity): string
+    {
+        $orders = $this->esb->forContract('order-management', $this->token);
+        $cartId = $orders->CreateCart(['customerId' => $this->customerId])->cartId;
+        $orders->AddCartItem([
+            'cartId' => $cartId,
+            'productId' => $product->id,
+            'sku' => $product->sku,
+            'quantity' => $quantity,
+            'unitPrice' => ['amountMinor' => $product->price->amountMinor, 'currency' => $product->price->currency],
+        ]);
+
+        return $cartId;
+    }
+
+    /** Один виклик до ESB, який проганяє весь бізнес-процес. */
+    public function checkout(string $cartId): object
+    {
+        return $this->esb->forContract('checkout-orchestration', $this->token)->Checkout([
+            'cartId' => $cartId,
+            'customerId' => $this->customerId,
+            'customerEmail' => $this->email,
+            'shippingAddress' => ['line1' => 'вул. Хрещатик, 1', 'city' => 'Київ', 'postalCode' => '01001', 'country' => 'UA'],
+        ]);
+    }
+
+    public function order(string $orderId): object
+    {
+        return $this->esb->forContract('order-management', $this->token)->GetOrder(['orderId' => $orderId])->order;
+    }
+}
