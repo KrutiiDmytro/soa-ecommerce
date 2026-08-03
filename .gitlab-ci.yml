@@ -1,0 +1,213 @@
+# CI Task 28 (SOA). Три змістовні стадії відповідають трьом рівням тестів із docs/todo.md §8.
+#
+# prepare     — розблокувати спільну робочу теку раннера (див. prepare:workspace);
+# lint        — синтаксис PHP + валідність контрактів (WSDL/XSD мають лишатись коректним XML);
+# unit        — домен кожного сервісу ізольовано, без БД, брокера й мережі;
+# integration — піднятий стек: SOAP до кожного сервісу з реальною БД + наскрізний потік через ESB.
+#               ЛИШЕ ВРУЧНУ — раннер живе на прод-хості, якому бракує пам'яті на весь стек.
+#
+# Раннер #303 — shell-типу: джоби виконуються прямо на хості, docker CLI береться звідти ж.
+# Звідси дві наслідкові речі, розкидані по файлу: ключі image/services тут не діють (див. default),
+# а робоча тека спільна для всіх джоб (див. prepare:workspace).
+
+stages:
+  - prepare
+  - lint
+  - unit
+  - integration
+
+# Пайплайн лише там, де він потрібен: MR, develop і main (реліз).
+# Без цього прогін стартував би на кожен пуш у будь-яку гілку, а раннер спільний із Task-25.
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+variables:
+  DOCKER_DRIVER: overlay2
+  SOA_IMAGE: printzone-soa-php:8.2
+
+default:
+  # Раннер #303 (спільний із Task-25) тегований — без цього тегу він джоби не забирає
+  # і пайплайн вічно висить у stuck.
+  tags:
+    - Веб-разработка
+  # image/services тут навмисно немає: їх читає лише docker-виконавець, а #303 shell-типу
+  # й мовчки їх ігнорує. Тримати `services: docker:27-dind` означало б вдавати ізоляцію,
+  # якої нема, — насправді джоби ходять у docker самого хоста (тому й тека спільна).
+  # Якщо проєкт колись переїде на docker-раннер, image: docker:27 + dind треба повернути.
+  before_script:
+    - docker info >/dev/null
+    - cp .env.example .env
+    - docker build -f docker/Dockerfile -t "$SOA_IMAGE" .
+
+# ---------- prepare ----------
+
+# Раннер #303 — shell-типу: усі джоби ділять одну робочу теку. Якщо якийсь прогін
+# лишив у ній файли, створені root-ом усередині контейнера (composer install у
+# compose-сервісах), git clean наступної джоби падає з «Permission denied» ще до
+# script — і стадія вмирає цілком. Повертаємо власника раннеру, решту прибере
+# штатний git clean.
+#
+# Окрема стадія перед усіма, а не сусід lint:php: у межах однієї стадії джоби йдуть
+# паралельно, тож lint устиг би впасти на git clean раніше, ніж чистка відпрацює.
+#
+# GIT_STRATEGY: none пропускає fetch/clean — саме той крок, що падає, — тому джоба
+# стартує навіть на заблокованій теці. before_script глушимо: docker build тут зайвий.
+# Триває секунди, тому й автоматична: пайплайн лікує себе сам, замість вимагати,
+# щоб хтось пам'ятав про цю грабку і тиснув ▶.
+prepare:workspace:
+  stage: prepare
+  variables:
+    GIT_STRATEGY: none
+  before_script: []
+  script:
+    - docker run --rm -v "$PWD:/w" busybox chown -R "$(id -u):$(id -g)" /w
+
+# ---------- lint ----------
+
+lint:php:
+  stage: lint
+  script:
+    - |
+      docker run --rm -v "$PWD:/app" -w /app "$SOA_IMAGE" sh -c '
+        find services esb tests -name "*.php" -not -path "*/vendor/*" -print0 \
+          | xargs -0 -n1 php -l > /tmp/lint.txt || { cat /tmp/lint.txt; exit 1; }
+        echo "PHP OK: $(grep -c "No syntax errors" /tmp/lint.txt) файлів"
+      '
+
+lint:contracts:
+  stage: lint
+  script:
+    - |
+      docker run --rm -v "$PWD:/app" -w /app "$SOA_IMAGE" php -r '
+        $failed = 0;
+        foreach (glob("contracts/*.{wsdl,xsd}", GLOB_BRACE) as $contract) {
+            $document = new DOMDocument();
+            if (!@$document->load($contract)) {
+                fwrite(STDERR, "НЕВАЛІДНИЙ XML: $contract\n");
+                $failed = 1;
+                continue;
+            }
+            echo "OK $contract\n";
+        }
+        exit($failed);
+      '
+
+# Локи тепер у git, тож CI ставить залежності з них, а не резолвить щоразу заново.
+# Ця джоба стереже єдину ваду такої схеми: composer.json змінили, lock — ні. Тоді
+# composer install мовчки поставив би старий набір, а тести впали б десь далеко
+# звідси незрозумілим «Class not found». composer validate ловить розсинхрон одразу
+# й називає його своїм ім'ям.
+lint:composer:
+  stage: lint
+  script:
+    - |
+      docker run --rm -v "$PWD:/app:ro" -w /app "$SOA_IMAGE" sh -c '
+        failed=0
+        for component in services/* esb tests; do
+            [ -f "$component/composer.json" ] || continue
+            if (cd "$component" && composer validate --no-check-publish --no-check-all --no-interaction); then
+                echo "OK $component"
+            else
+                echo "РОЗСИНХРОН: $component — оновіть composer.lock (composer update --lock)"
+                failed=1
+            fi
+        done
+        exit $failed
+      '
+
+# ---------- unit ----------
+
+unit:
+  stage: unit
+  parallel:
+    matrix:
+      - COMPONENT:
+          - services/customer-management
+          - services/product-inventory
+          - services/order-management
+          - services/fulfillment
+          - services/notification
+          - esb
+  script:
+    # Джерела монтуємо ro і копіюємо в /app (WORKDIR образу): composer install іде від
+    # root, а раннер shell-типу ділить робочу теку між джобами — root-owned vendor/
+    # зламав би git clean усіх наступних. Так vendor/ і .phpunit.cache/ лишаються в шарі
+    # контейнера й зникають разом із --rm.
+    #
+    # На момент старту /app порожній, тож entrypoint пропускає свій composer install —
+    # залежності ставляться один раз, а не двічі, як було.
+    - |
+      docker run --rm \
+        -v "$PWD/$COMPONENT:/src:ro" \
+        -v "$PWD/contracts:/contracts:ro" \
+        "$SOA_IMAGE" sh -c '
+          cp -a /src/. /app/
+          composer install --no-interaction --no-progress --quiet
+          php vendor/bin/phpunit
+        '
+
+# ---------- integration + e2e ----------
+#
+# Тільки вручну. Раннер стоїть на прод-дроплеті (1 vCPU / 1 GB), де вже працює магазин
+# Task-25; ця стадія піднімає ще 13 контейнерів (4 Postgres, RabbitMQ, Redis, 6 PHP).
+# Автоматичний запуск означав би OOM — у кращому випадку джоби, у гіршому прода.
+# Локально всі три рівні (98 unit / 37 integration / 8 e2e) зелені, див. docs/todo.md §8.
+
+integration:
+  stage: integration
+  when: manual
+  # Явно, хоч для manual це й дефолт: натиснута вручну джоба не має валити реліз.
+  allow_failure: true
+  timeout: 30m
+  script:
+    # Залежності ставимо ОДИН раз до підйому стека. Інакше це роблять дев'ять контейнерів
+    # на власному старті, кожен у свою чергу на єдиному ядрі, — і саме це з'їдало півгодини,
+    # у яку джоба впиралась таймаутом. Після цього кроку entrypoint у контейнерах бачить
+    # готовий vendor/ і відпрацьовує майже миттєво.
+    #
+    # --entrypoint composer обходить entrypoint.sh: інакше він зробив би свій composer
+    # install ще до нашого, і ми б поставили залежності двічі замість одного разу.
+    #
+    # vendor/ лишається на хості й належить root — after_script нижче повертає власника,
+    # інакше git clean наступного пайплайна впаде на «Permission denied».
+    - |
+      for component in services/* esb tests; do
+        [ -f "$component/composer.json" ] || continue
+        echo "=== deps: $component ==="
+        docker run --rm -v "$PWD/$component:/app" --entrypoint composer "$SOA_IMAGE" \
+          install --no-interaction --no-progress --quiet
+      done
+    - docker compose up -d
+    # Прогрів: entrypoint уже warmup-ить кеш, але БД піднімається довше за сервіси.
+    - |
+      for service in customer-management product-inventory order-management fulfillment notification esb; do
+        for attempt in $(seq 1 60); do
+          if docker compose exec -T esb curl -sf -m 30 "http://$service/health" >/dev/null 2>&1; then
+            echo "$service ok"; break
+          fi
+          [ "$attempt" = "60" ] && { echo "$service не піднявся"; exit 1; }
+          sleep 5
+        done
+      done
+    - docker compose exec -T product-inventory php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T customer-management php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T order-management php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T fulfillment php bin/console doctrine:migrations:migrate --no-interaction
+    - docker compose exec -T product-inventory php bin/console app:seed-products --reset-stock
+    - |
+      for service in customer-management product-inventory order-management fulfillment notification esb; do
+        echo "=== integration: $service ==="
+        docker compose exec -T "$service" php vendor/bin/phpunit --testsuite integration
+      done
+    - echo "=== e2e через ESB ==="
+    - docker compose run --rm e2e
+  after_script:
+    # compose монтує ./services/* і ./esb у контейнери, де entrypoint пише vendor/ і var/
+    # від root. Без цього кроку git clean наступного пайплайна впаде з «Permission denied».
+    # Першим рядком — щоб виконалось навіть якщо збір логів або down зламається.
+    - docker run --rm -v "$PWD:/w" busybox chown -R "$(id -u):$(id -g)" /w || true
+    - docker compose logs --tail 50 esb notification-worker fulfillment-worker product-inventory-worker || true
+    - docker compose down -v || true

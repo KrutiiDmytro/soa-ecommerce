@@ -29,7 +29,7 @@ final class CheckoutFlowTest extends TestCase
     {
         $shop = $this->shop->signUp();
 
-        $product = $shop->product('PRINT-MUG');
+        $product = $shop->productWithStock(2);
         $stockBefore = $shop->stockOf($product->id);
 
         $result = $shop->checkout($shop->cartWith($product, 2));
@@ -49,10 +49,9 @@ final class CheckoutFlowTest extends TestCase
     {
         $shop = $this->shop->signUp();
 
-        // Найдорожчий товар у кількості, що гарантовано пробиває ліміт fake-провайдера.
-        $products = $shop->catalog();
-        $product = end($products);
-        $quantity = intdiv(1_000_000, (int) $product->price->amountMinor) + 1;
+        // Кількість, що гарантовано пробиває ліміт fake-провайдера, але є на складі:
+        // збій має статися саме на оплаті, інакше перевірятимемо не ту гілку компенсації.
+        [$product, $quantity] = $shop->purchaseExceedingPaymentLimit();
         $stockBefore = $shop->stockOf($product->id);
 
         $cartId = $shop->cartWith($product, $quantity);
@@ -71,7 +70,7 @@ final class CheckoutFlowTest extends TestCase
     public function testStockProjectionCatchesUpAsynchronously(): void
     {
         $shop = $this->shop->signUp();
-        $product = $shop->product('PRINT-TSHIRT');
+        $product = $shop->productWithStock(1);
 
         $shop->checkout($shop->cartWith($product, 1));
         $expected = $shop->stockOf($product->id);

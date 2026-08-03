@@ -10,6 +10,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
@@ -32,21 +33,46 @@ final class SeedProductsCommand extends Command
         parent::__construct();
     }
 
+    protected function configure(): void
+    {
+        $this->addOption(
+            'reset-stock',
+            null,
+            InputOption::VALUE_NONE,
+            'Повернути залишки демо-товарів до початкових (щоб e2e можна було ганяти повторно)',
+        );
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
+        $reset = (bool) $input->getOption('reset-stock');
         $created = 0;
+        $restocked = 0;
 
         foreach (self::SEED as [$id, $sku, $name, $amountMinor, $stock]) {
-            if ($this->products->byId($id) !== null) {
+            $product = $this->products->byId($id);
+
+            if ($product === null) {
+                $this->em->persist(new Product($id, $sku, $name, new Money($amountMinor, 'UAH'), $stock));
+                ++$created;
                 continue;
             }
-            $this->em->persist(new Product($id, $sku, $name, new Money($amountMinor, 'UAH'), $stock));
-            ++$created;
+
+            // Поповнення робимо доменною операцією release() — окремого сетера не заводимо.
+            if ($reset && ($missing = $stock - $product->stockAvailable()) > 0) {
+                $product->release($missing);
+                ++$restocked;
+            }
         }
         $this->em->flush();
 
-        $io->success(sprintf('Seed complete: %d product(s) created, %d already present.', $created, \count(self::SEED) - $created));
+        $io->success(sprintf(
+            'Seed complete: %d created, %d already present%s.',
+            $created,
+            \count(self::SEED) - $created,
+            $reset ? sprintf(', %d restocked', $restocked) : '',
+        ));
 
         return Command::SUCCESS;
     }
