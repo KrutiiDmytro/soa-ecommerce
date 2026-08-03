@@ -81,7 +81,16 @@ services:
     <<: *php-service
     environment: { SERVICE_NAME: product-inventory }
     volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
-    depends_on: [db-product, redis, rabbitmq, product-inventory]
+    # service_healthy, а не просто service_started: воркер монтує ТУ САМУ теку, що й
+    # product-inventory, і його entrypoint теж робить composer install. За старої
+    # спискової форми обидва починали ставити залежності в один vendor/ одночасно —
+    # подвійна робота і гонка двох composer в одній теці. Тепер воркер чекає, поки
+    # сервіс відповість на /health, тобто install і warmup уже позаду.
+    depends_on:
+      db-product: { condition: service_started }
+      redis: { condition: service_started }
+      rabbitmq: { condition: service_started }
+      product-inventory: { condition: service_healthy }
     command: ["php", "bin/console", "app:project-stock"]
 
   order-management:
@@ -101,7 +110,11 @@ services:
     <<: *php-service
     environment: { SERVICE_NAME: fulfillment }
     volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
-    depends_on: [db-fulfillment, rabbitmq, fulfillment]
+    # Та сама тека, що й у fulfillment — див. пояснення в product-inventory-worker.
+    depends_on:
+      db-fulfillment: { condition: service_started }
+      rabbitmq: { condition: service_started }
+      fulfillment: { condition: service_healthy }
     command: ["php", "bin/console", "app:consume-commands"]
 
   notification:
@@ -115,7 +128,11 @@ services:
     <<: *php-service
     environment: { SERVICE_NAME: notification }
     volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
-    depends_on: [rabbitmq, redis, notification]
+    # Та сама тека, що й у notification — див. пояснення в product-inventory-worker.
+    depends_on:
+      rabbitmq: { condition: service_started }
+      redis: { condition: service_started }
+      notification: { condition: service_healthy }
     command: ["php", "bin/console", "app:consume-events"]
 
   # ---------- ESB (єдина публічна точка входу) ----------
