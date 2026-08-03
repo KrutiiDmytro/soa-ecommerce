@@ -83,4 +83,16 @@ class CartItem
     {
         return $this->unitPrice()->multiply($this->quantity);
     }
+
+    /** Канонічне представлення tns:CartLine. */
+    public function toCanonical(): array
+    {
+        return [
+            'productId' => $this->productId,
+            'sku' => $this->sku,
+            'quantity' => $this->quantity,
+            'unitPrice' => $this->unitPrice()->toCanonical(),
+            'lineTotal' => $this->lineTotal()->toCanonical(),
+        ];
+    }
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         defaultTestSuite="unit"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <!-- Шаблони й обробка подій на in-memory портах -->
+        <testsuite name="unit">
+            <directory>tests/Domain</directory>
+            <directory>tests/Application</directory>
+        </testsuite>
+        <!-- Справжній SOAP-виклик до піднятого сервісу (БД у сервісу немає) -->
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

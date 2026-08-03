@@ -40,6 +40,11 @@ final class OrderService
         return $cart;
     }
 
+    public function getCart(string $cartId): Cart
+    {
+        return $this->cart($cartId);
+    }
+
     /** Кошик стає замовленням у стані PENDING; кошик після цього не потрібен. */
     public function checkout(string $cartId, string $customerId, Address $shippingAddress): Order
     {

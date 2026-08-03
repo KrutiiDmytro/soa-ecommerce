@@ -15,6 +15,33 @@
     <xsd:schema targetNamespace="urn:printzone:soa:fulfillment:v1" elementFormDefault="qualified">
       <xsd:import namespace="urn:printzone:soa:canonical:v1" schemaLocation="canonical-data-model.xsd"/>
 
+      <!-- Локальні типи сервісу: канонічна модель описує замовлення/товар/клієнта,
+           платіж і відправлення лишаються у власному namespace Fulfillment. -->
+      <xsd:simpleType name="PaymentStatus">
+        <xsd:restriction base="xsd:string">
+          <xsd:enumeration value="AUTHORIZED"/>
+          <xsd:enumeration value="CAPTURED"/>
+          <xsd:enumeration value="FAILED"/>
+        </xsd:restriction>
+      </xsd:simpleType>
+
+      <xsd:simpleType name="ShipmentStatus">
+        <xsd:restriction base="xsd:string">
+          <xsd:enumeration value="CREATED"/>
+          <xsd:enumeration value="DISPATCHED"/>
+          <xsd:enumeration value="IN_TRANSIT"/>
+          <xsd:enumeration value="DELIVERED"/>
+        </xsd:restriction>
+      </xsd:simpleType>
+
+      <xsd:complexType name="TrackingEvent">
+        <xsd:sequence>
+          <xsd:element name="status" type="tns:ShipmentStatus"/>
+          <xsd:element name="description" type="xsd:string"/>
+          <xsd:element name="occurredAt" type="xsd:dateTime"/>
+        </xsd:sequence>
+      </xsd:complexType>
+
       <xsd:element name="AuthorizePaymentRequest">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="orderId" type="cdm:UUID"/>
@@ -25,6 +52,19 @@
         <xsd:complexType><xsd:sequence>
           <xsd:element name="paymentId" type="cdm:UUID"/>
           <xsd:element name="authorized" type="xsd:boolean"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
+      <xsd:element name="CapturePaymentRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="paymentId" type="cdm:UUID"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="CapturePaymentResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="paymentId" type="cdm:UUID"/>
+          <xsd:element name="status" type="tns:PaymentStatus"/>
+          <xsd:element name="capturedAmount" type="cdm:Money"/>
         </xsd:sequence></xsd:complexType>
       </xsd:element>
 
@@ -41,6 +81,21 @@
         </xsd:sequence></xsd:complexType>
       </xsd:element>
 
+      <!-- TrackShipment: трекінг event-sourced — віддаємо повну історію подій -->
+      <xsd:element name="TrackShipmentRequest">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="shipmentId" type="cdm:UUID"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+      <xsd:element name="TrackShipmentResponse">
+        <xsd:complexType><xsd:sequence>
+          <xsd:element name="shipmentId" type="cdm:UUID"/>
+          <xsd:element name="trackingNumber" type="xsd:string"/>
+          <xsd:element name="status" type="tns:ShipmentStatus"/>
+          <xsd:element name="event" type="tns:TrackingEvent" maxOccurs="unbounded"/>
+        </xsd:sequence></xsd:complexType>
+      </xsd:element>
+
       <xsd:element name="FulfillmentFault">
         <xsd:complexType><xsd:sequence>
           <xsd:element name="code" type="xsd:string"/>
@@ -52,8 +107,12 @@
 
   <wsdl:message name="AuthorizePaymentIn"> <wsdl:part name="body" element="tns:AuthorizePaymentRequest"/> </wsdl:message>
   <wsdl:message name="AuthorizePaymentOut"><wsdl:part name="body" element="tns:AuthorizePaymentResponse"/></wsdl:message>
+  <wsdl:message name="CapturePaymentIn">   <wsdl:part name="body" element="tns:CapturePaymentRequest"/>   </wsdl:message>
+  <wsdl:message name="CapturePaymentOut">  <wsdl:part name="body" element="tns:CapturePaymentResponse"/>  </wsdl:message>
   <wsdl:message name="CreateShipmentIn">   <wsdl:part name="body" element="tns:CreateShipmentRequest"/>   </wsdl:message>
   <wsdl:message name="CreateShipmentOut">  <wsdl:part name="body" element="tns:CreateShipmentResponse"/>  </wsdl:message>
+  <wsdl:message name="TrackShipmentIn">    <wsdl:part name="body" element="tns:TrackShipmentRequest"/>    </wsdl:message>
+  <wsdl:message name="TrackShipmentOut">   <wsdl:part name="body" element="tns:TrackShipmentResponse"/>   </wsdl:message>
   <wsdl:message name="FulfillmentFaultMsg"><wsdl:part name="body" element="tns:FulfillmentFault"/>          </wsdl:message>
 
   <wsdl:portType name="FulfillmentPort">
@@ -62,9 +121,19 @@
       <wsdl:output message="tns:AuthorizePaymentOut"/>
       <wsdl:fault name="FulfillmentFault" message="tns:FulfillmentFaultMsg"/>
     </wsdl:operation>
+    <wsdl:operation name="CapturePayment">
+      <wsdl:input message="tns:CapturePaymentIn"/>
+      <wsdl:output message="tns:CapturePaymentOut"/>
+      <wsdl:fault name="FulfillmentFault" message="tns:FulfillmentFaultMsg"/>
+    </wsdl:operation>
     <wsdl:operation name="CreateShipment">
       <wsdl:input message="tns:CreateShipmentIn"/>
       <wsdl:output message="tns:CreateShipmentOut"/>
+      <wsdl:fault name="FulfillmentFault" message="tns:FulfillmentFaultMsg"/>
+    </wsdl:operation>
+    <wsdl:operation name="TrackShipment">
+      <wsdl:input message="tns:TrackShipmentIn"/>
+      <wsdl:output message="tns:TrackShipmentOut"/>
       <wsdl:fault name="FulfillmentFault" message="tns:FulfillmentFaultMsg"/>
     </wsdl:operation>
   </wsdl:portType>
@@ -77,8 +146,20 @@
       <wsdl:output><soap:body use="literal"/></wsdl:output>
       <wsdl:fault name="FulfillmentFault"><soap:fault name="FulfillmentFault" use="literal"/></wsdl:fault>
     </wsdl:operation>
+    <wsdl:operation name="CapturePayment">
+      <soap:operation soapAction="urn:printzone:soa:fulfillment:v1/CapturePayment"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="FulfillmentFault"><soap:fault name="FulfillmentFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
     <wsdl:operation name="CreateShipment">
       <soap:operation soapAction="urn:printzone:soa:fulfillment:v1/CreateShipment"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+      <wsdl:fault name="FulfillmentFault"><soap:fault name="FulfillmentFault" use="literal"/></wsdl:fault>
+    </wsdl:operation>
+    <wsdl:operation name="TrackShipment">
+      <soap:operation soapAction="urn:printzone:soa:fulfillment:v1/TrackShipment"/>
       <wsdl:input><soap:body use="literal"/></wsdl:input>
       <wsdl:output><soap:body use="literal"/></wsdl:output>
       <wsdl:fault name="FulfillmentFault"><soap:fault name="FulfillmentFault" use="literal"/></wsdl:fault>
@@ -87,7 +168,7 @@
 
   <wsdl:service name="FulfillmentService">
     <wsdl:port name="FulfillmentPort" binding="tns:FulfillmentSoapBinding">
-      <soap:address location="https://esb.printzone.internal/services/fulfillment/v1"/>
+      <soap:address location="http://fulfillment/soap"/>
     </wsdl:port>
   </wsdl:service>
 </wsdl:definitions>

@@ -40,6 +40,11 @@ final class OrderSoapHandler
         });
     }
 
+    public function GetCart(object $request): array
+    {
+        return $this->guard(fn (): array => $this->orders->getCart((string) $request->cartId)->toCanonical());
+    }
+
     public function Checkout(object $request): array
     {
         return $this->guard(fn (): array => [

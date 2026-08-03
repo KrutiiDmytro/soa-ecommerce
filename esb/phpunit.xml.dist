@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         defaultTestSuite="unit"
+         cacheDirectory=".phpunit.cache">
+    <testsuites>
+        <!-- Маршрутизація, політика безпеки й трансформація ізольовано -->
+        <testsuite name="unit">
+            <directory>tests/Gateway</directory>
+            <directory>tests/Security</directory>
+            <directory>tests/Orchestration</directory>
+        </testsuite>
+        <!-- Піднятий ESB: реєстр, віддача контрактів, роутинг, enforcement -->
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

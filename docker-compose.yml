@@ -9,6 +9,19 @@ x-php-service: &php-service
   restart: unless-stopped
   env_file: .env
 
+# Тільки для HTTP-сервісів: entrypoint спершу ставить залежності й прогріває кеш,
+# тому порт відкривається не миттєво — готовність показує healthcheck.
+x-php-web: &php-web
+  healthcheck:
+    # `php -S` однопотоковий, а /health у dev-режимі коштує 2–10 с (змонтований код).
+    # Часті проби з'їдали до третини пропускної здатності й гальмували e2e, тому інтервал
+    # рідкий, а таймаут щедрий — інакше холодна проба гине раніше, ніж Symfony відповість.
+    test: ["CMD", "curl", "-fs", "http://localhost/health"]
+    interval: 60s
+    timeout: 30s
+    retries: 10
+    start_period: 240s
+
 services:
   # ---------- Інфраструктура ----------
   db-customer:
@@ -52,40 +65,81 @@ services:
 
   # ---------- SOA-сервіси (внутрішні, без публічних портів) ----------
   customer-management:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: customer-management }
     volumes: ["./services/customer-management:/app", "./contracts:/contracts:ro"]
     depends_on: [db-customer]
 
   product-inventory:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: product-inventory }
     volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
     depends_on: [db-product, redis]
 
-  order-management:
+  # Проекція залишків: read-model, побудований з подій stock.level.changed
+  product-inventory-worker:
     <<: *php-service
+    environment: { SERVICE_NAME: product-inventory }
+    volumes: ["./services/product-inventory:/app", "./contracts:/contracts:ro"]
+    # service_healthy, а не просто service_started: воркер монтує ТУ САМУ теку, що й
+    # product-inventory, і його entrypoint теж робить composer install. За старої
+    # спискової форми обидва починали ставити залежності в один vendor/ одночасно —
+    # подвійна робота і гонка двох composer в одній теці. Тепер воркер чекає, поки
+    # сервіс відповість на /health, тобто install і warmup уже позаду.
+    depends_on:
+      db-product: { condition: service_started }
+      redis: { condition: service_started }
+      rabbitmq: { condition: service_started }
+      product-inventory: { condition: service_healthy }
+    command: ["php", "bin/console", "app:project-stock"]
+
+  order-management:
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: order-management }
     volumes: ["./services/order-management:/app", "./contracts:/contracts:ro"]
     depends_on: [db-order]
 
   fulfillment:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: fulfillment }
-    volumes: ["./services/fulfillment:/app"]
+    volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
     depends_on: [db-fulfillment, rabbitmq]
 
+  # Асинхронна гілка оркестрації: команди shipment.requested від ESB
+  fulfillment-worker:
+    <<: *php-service
+    environment: { SERVICE_NAME: fulfillment }
+    volumes: ["./services/fulfillment:/app", "./contracts:/contracts:ro"]
+    # Та сама тека, що й у fulfillment — див. пояснення в product-inventory-worker.
+    depends_on:
+      db-fulfillment: { condition: service_started }
+      rabbitmq: { condition: service_started }
+      fulfillment: { condition: service_healthy }
+    command: ["php", "bin/console", "app:consume-commands"]
+
   notification:
+    <<: [*php-service, *php-web]
+    environment: { SERVICE_NAME: notification }
+    volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
+    depends_on: [rabbitmq, redis]
+
+  # Асинхронний споживач подій шини (той самий код, інша точка входу)
+  notification-worker:
     <<: *php-service
     environment: { SERVICE_NAME: notification }
-    volumes: ["./services/notification:/app"]
-    depends_on: [rabbitmq]
+    volumes: ["./services/notification:/app", "./contracts:/contracts:ro"]
+    # Та сама тека, що й у notification — див. пояснення в product-inventory-worker.
+    depends_on:
+      rabbitmq: { condition: service_started }
+      redis: { condition: service_started }
+      notification: { condition: service_healthy }
+    command: ["php", "bin/console", "app:consume-events"]
 
   # ---------- ESB (єдина публічна точка входу) ----------
   esb:
-    <<: *php-service
+    <<: [*php-service, *php-web]
     environment: { SERVICE_NAME: esb }
-    volumes: ["./esb:/app"]
+    volumes: ["./esb:/app", "./contracts:/contracts:ro"]
     ports: ["8080:80"]
     depends_on:
       - customer-management
@@ -93,6 +147,17 @@ services:
       - order-management
       - fulfillment
       - notification
+
+  # Наскрізні тести: клієнт бачить лише ESB. Разовий запуск, не піднімається з `up`:
+  #   docker compose run --rm e2e
+  e2e:
+    <<: *php-service
+    profiles: ["test"]
+    restart: "no"
+    environment: { SERVICE_NAME: e2e }
+    volumes: ["./tests:/app", "./contracts:/contracts:ro"]
+    depends_on: [esb]
+    command: ["php", "vendor/bin/phpunit"]
 
 volumes:
   pg-customer:

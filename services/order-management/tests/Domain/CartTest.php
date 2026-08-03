@@ -38,6 +38,19 @@ final class CartTest extends TestCase
         self::assertSame(3 * 29900, $cart->total()->amountMinor);
     }
 
+    public function testCanonicalShapeForOrchestration(): void
+    {
+        $cart = new Cart('customer-1');
+        $cart->addItem('product-1', 'PRINT-TSHIRT', 2, new Money(29900, 'UAH'));
+
+        $canonical = $cart->toCanonical();
+
+        self::assertSame(['cartId', 'customerId', 'line', 'total'], array_keys($canonical));
+        self::assertSame(['productId', 'sku', 'quantity', 'unitPrice', 'lineTotal'], array_keys($canonical['line'][0]));
+        self::assertSame(2, $canonical['line'][0]['quantity']);
+        self::assertSame(59800, $canonical['total']['amountMinor']);
+    }
+
     public function testNonPositiveQuantityThrows(): void
     {
         $cart = new Cart('customer-1');
