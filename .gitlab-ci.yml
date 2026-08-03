@@ -87,6 +87,29 @@ lint:contracts:
         exit($failed);
       '
 
+# Локи тепер у git, тож CI ставить залежності з них, а не резолвить щоразу заново.
+# Ця джоба стереже єдину ваду такої схеми: composer.json змінили, lock — ні. Тоді
+# composer install мовчки поставив би старий набір, а тести впали б десь далеко
+# звідси незрозумілим «Class not found». composer validate ловить розсинхрон одразу
+# й називає його своїм ім'ям.
+lint:composer:
+  stage: lint
+  script:
+    - |
+      docker run --rm -v "$PWD:/app:ro" -w /app "$SOA_IMAGE" sh -c '
+        failed=0
+        for component in services/* esb tests; do
+            [ -f "$component/composer.json" ] || continue
+            if (cd "$component" && composer validate --no-check-publish --no-check-all --no-interaction); then
+                echo "OK $component"
+            else
+                echo "РОЗСИНХРОН: $component — оновіть composer.lock (composer update --lock)"
+                failed=1
+            fi
+        done
+        exit $failed
+      '
+
 # ---------- unit ----------
 
 unit:
