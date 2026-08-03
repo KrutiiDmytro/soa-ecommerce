@@ -70,6 +70,11 @@ prepare:workspace:
     GIT_STRATEGY: none
   before_script: []
   script:
+    # Спершу знімаємо стек Task-28, якщо він лишився від таймнутої integration.
+    # У контейнерів restart: unless-stopped, а їхній entrypoint пише у змонтовані теки
+    # від root — поки вони живі, chown нижче безсилий: файли з'являються знову.
+    # Фільтр по імені compose-проєкту, тож чужі контейнери раннера це не чіпає.
+    - docker rm -f $(docker ps -aq --filter "name=printzone-soa") 2>/dev/null || true
     - echo "чистимо слоти раннера у ${CI_BUILDS_DIR:-$PWD}"
     - docker run --rm -v "${CI_BUILDS_DIR:-$PWD}:/b" busybox chown -R "$(id -u):$(id -g)" /b
 
