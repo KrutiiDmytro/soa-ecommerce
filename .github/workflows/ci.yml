@@ -1,0 +1,215 @@
+name: CI
+
+# Порт .gitlab-ci.yml на GitHub Actions. Три рівні тестів із docs/todo.md §8:
+# lint (синтаксис + контракти), unit (домен ізольовано), integration (піднятий
+# стек: SOAP до кожного сервісу з реальною БД + наскрізний потік через ESB).
+#
+# Дві відмінності від GitLab-версії, обидві — наслідок зміни раннера:
+#
+# 1. Стадії prepare:workspace більше немає. Вона існувала лише тому, що раннер
+#    #303 був shell-типу й ділив робочу теку між джобами: root-owned vendor/ від
+#    попереднього прогону валив `git clean` наступного. Тут кожна джоба дістає
+#    чисту віртуалку, тож і проблеми немає.
+#
+# 2. integration виконується АВТОМАТИЧНО, а не вручну. У GitLab вона стояла на
+#    `when: manual`, бо раннер жив на прод-дроплеті (1 vCPU / 1 ГБ) поруч із
+#    магазином, і підйом 13 контейнерів двічі підвішував хост. Раннер GitHub —
+#    окрема машина на 4 vCPU / 16 ГБ, якій нічого класти.
+
+on:
+  push:
+    branches: [main, develop, 'feat/**', 'fix/**']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOA_IMAGE: printzone-soa-php:8.2
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Кеш GHA: образ збирається один раз на весь репозиторій, решта джоб
+      # дістають його з кешу за секунди замість повної перезбірки.
+      - name: Build PHP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: ${{ env.SOA_IMAGE }}
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: PHP syntax
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app "$SOA_IMAGE" sh -c '
+            find services esb tests -name "*.php" -not -path "*/vendor/*" -print0 \
+              | xargs -0 -n1 php -l > /tmp/lint.txt || { cat /tmp/lint.txt; exit 1; }
+            echo "PHP OK: $(grep -c "No syntax errors" /tmp/lint.txt) файлів"
+          '
+
+      # WSDL/XSD — це контракт, з якого генеруються клієнти. Якщо він перестав
+      # бути валідним XML, ламається все, що по ньому спілкується.
+      - name: Contracts are valid XML
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app "$SOA_IMAGE" php -r '
+            $failed = 0;
+            foreach (glob("contracts/*.{wsdl,xsd}", GLOB_BRACE) as $contract) {
+                $document = new DOMDocument();
+                if (!@$document->load($contract)) {
+                    fwrite(STDERR, "НЕВАЛІДНИЙ XML: $contract\n");
+                    $failed = 1;
+                    continue;
+                }
+                echo "OK $contract\n";
+            }
+            exit($failed);
+          '
+
+      # Локи в git, тож CI ставить залежності з них. Єдина вада схеми: змінили
+      # composer.json, а lock — ні. Тоді install мовчки поставив би старий набір,
+      # а тести впали б далеко звідси незрозумілим «Class not found».
+      - name: composer.json vs composer.lock
+        run: |
+          docker run --rm -v "$PWD:/app:ro" -w /app "$SOA_IMAGE" sh -c '
+            failed=0
+            for component in services/* esb tests; do
+                [ -f "$component/composer.json" ] || continue
+                if (cd "$component" && composer validate --no-check-publish --no-check-all --no-interaction); then
+                    echo "OK $component"
+                else
+                    echo "РОЗСИНХРОН: $component — оновіть composer.lock (composer update --lock)"
+                    failed=1
+                fi
+            done
+            exit $failed
+          '
+
+  unit:
+    name: unit ${{ matrix.component }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - services/customer-management
+          - services/product-inventory
+          - services/order-management
+          - services/fulfillment
+          - services/notification
+          - esb
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build PHP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: ${{ env.SOA_IMAGE }}
+          load: true
+          cache-from: type=gha
+
+      # Джерела монтуємо ro і копіюємо в /app (WORKDIR образу) — так vendor/ і
+      # .phpunit.cache/ лишаються в шарі контейнера й зникають разом із --rm.
+      # На старті /app порожній, тож entrypoint пропускає власний composer
+      # install: залежності ставляться один раз, а не двічі.
+      - name: phpunit
+        run: |
+          docker run --rm \
+            -v "$PWD/${{ matrix.component }}:/src:ro" \
+            -v "$PWD/contracts:/contracts:ro" \
+            "$SOA_IMAGE" sh -c '
+              cp -a /src/. /app/
+              composer install --no-interaction --no-progress --quiet
+              php vendor/bin/phpunit
+            '
+
+  integration:
+    needs: [lint, unit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build PHP image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: ${{ env.SOA_IMAGE }}
+          load: true
+          cache-from: type=gha
+
+      - name: Prepare .env
+        run: cp .env.example .env
+
+      # Залежності ставимо ОДИН раз до підйому стека. Інакше це роблять дев'ять
+      # контейнерів на власному старті, кожен у свою чергу. --entrypoint composer
+      # обходить entrypoint.sh, який інакше зробив би свій install ще до нашого.
+      - name: Install dependencies once
+        run: |
+          for component in services/* esb tests; do
+            [ -f "$component/composer.json" ] || continue
+            echo "=== deps: $component ==="
+            docker run --rm -v "$PWD/$component:/app" --entrypoint composer "$SOA_IMAGE" \
+              install --no-interaction --no-progress --quiet
+          done
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      # Прогрів: entrypoint уже warmup-ить кеш, але БД піднімається довше за сервіси.
+      - name: Wait for services
+        run: |
+          for service in customer-management product-inventory order-management fulfillment notification esb; do
+            for attempt in $(seq 1 60); do
+              if docker compose exec -T esb curl -sf -m 30 "http://$service/health" >/dev/null 2>&1; then
+                echo "$service ok"; break
+              fi
+              if [ "$attempt" = "60" ]; then echo "$service не піднявся"; exit 1; fi
+              sleep 5
+            done
+          done
+
+      - name: Migrations and seed
+        run: |
+          for service in product-inventory customer-management order-management fulfillment; do
+            docker compose exec -T "$service" php bin/console doctrine:migrations:migrate --no-interaction
+          done
+          docker compose exec -T product-inventory php bin/console app:seed-products --reset-stock
+
+      - name: Integration tests
+        run: |
+          for service in customer-management product-inventory order-management fulfillment notification esb; do
+            echo "=== integration: $service ==="
+            docker compose exec -T "$service" php vendor/bin/phpunit --testsuite integration
+          done
+
+      - name: End-to-end through the ESB
+        run: docker compose run --rm e2e
+
+      - name: Stack logs
+        if: failure()
+        run: |
+          docker compose logs --tail 80 esb notification-worker fulfillment-worker product-inventory-worker || true
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true
